@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { redis } = require('../../config/cache');
 const model = require('./auth.model');
 
+// Create a short-lived JWT (15 min) containing user id, phone, and role
 function generateAccessToken(user) {
   return jwt.sign(
     { id: user.id, phone: user.phone, role: user.role },
@@ -12,6 +13,7 @@ function generateAccessToken(user) {
   );
 }
 
+// Register: check duplicate, hash password, create user in DB, store OTP in Redis
 async function register({ phone, password, name, email, gender }) {
   const existing = await model.findByPhone(phone);
   if (existing) throw Object.assign(new Error('Phone already registered'), { status: 409 });
@@ -32,6 +34,7 @@ async function register({ phone, password, name, email, gender }) {
   return { message: 'Registration successful. Verify OTP.', user_id: id };
 }
 
+// Verify OTP: match against Redis value, mark phone_verified in DB, delete OTP
 async function verifyOtp({ phone, otp }) {
   const stored = await redis.get(`otp:${phone}`).catch(() => null);
   if (!stored || stored !== otp) throw Object.assign(new Error('Invalid or expired OTP'), { status: 400 });
@@ -40,6 +43,7 @@ async function verifyOtp({ phone, otp }) {
   return { message: 'Phone verified successfully' };
 }
 
+// Login: find user, check verification, compare password, return tokens + profile
 async function login({ phone, password, fcm_token }) {
   console.log('[LOGIN:SERVICE] Finding user by phone:', phone);
   const user = await model.findByPhone(phone);
@@ -87,6 +91,7 @@ async function login({ phone, password, fcm_token }) {
   };
 }
 
+// Refresh: validate existing refresh token, delete it, issue a new JWT pair
 async function refresh(refreshToken) {
   const stored = await model.findRefreshToken(refreshToken);
   if (!stored) throw Object.assign(new Error('Invalid refresh token'), { status: 401 });
@@ -103,11 +108,13 @@ async function refresh(refreshToken) {
   return { access_token, refresh_token: new_refresh_token };
 }
 
+// Logout: delete all stored refresh tokens for the user
 async function logout(userId) {
   await model.deleteUserRefreshTokens(userId);
   return { message: 'Logged out successfully' };
 }
 
+// Forgot password: store reset OTP in Redis (silently succeeds even if phone is unknown)
 async function forgotPassword({ phone }) {
   const user = await model.findByPhone(phone);
   if (!user) return { message: 'OTP sent for password reset' };
@@ -117,6 +124,7 @@ async function forgotPassword({ phone }) {
   return { message: 'OTP sent for password reset' };
 }
 
+// Reset password: validate OTP, hash new password, update DB, delete OTP
 async function resetPassword({ phone, otp, password }) {
   const stored = await redis.get(`otp:reset:${phone}`).catch(() => null);
   if (!stored || stored !== otp) throw Object.assign(new Error('Invalid or expired OTP'), { status: 400 });
