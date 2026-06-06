@@ -1,49 +1,27 @@
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-const UploadModel = require('./upload.model');
-const { redis } = require('../../config/cache');
+const model = require('./upload.model');
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 
-async function checkRateLimit(userId) {
-  const key = `upload_rate:${userId}`;
-  const count = await redis.get(key);
-  if (count && Number(count) >= 10) {
-    throw Object.assign(new Error('Upload limit reached. Try again later.'), { status: 429 });
-  }
-  await redis.incr(key);
-  if (!count) await redis.expire(key, 3600);
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-exports.uploadFile = async (userId, file, type) => {
-  await checkRateLimit(userId);
+async function uploadFile(userId, file, type) {
+  if (!file) throw Object.assign(new Error('No file provided'), { status: 400 });
 
-  const ext = path.extname(file.originalname).toLowerCase();
+  const ext = path.extname(file.originalname);
   const filename = `${uuidv4()}${ext}`;
-  const destPath = path.join(UPLOAD_DIR, filename);
+  const destDir = path.join(UPLOAD_DIR, type);
+  ensureDir(destDir);
+  const destPath = path.join(destDir, filename);
 
   fs.renameSync(file.path, destPath);
 
-  const allowedImages = ['.jpeg', '.jpg', '.png', '.webp'];
-  const allowedVoice = ['.mp3', '.m4a', '.ogg'];
-  const allowedDocs = ['.pdf'];
-
-  if (type === 'image' && !allowedImages.includes(ext)) {
-    fs.unlinkSync(destPath);
-    throw Object.assign(new Error('Invalid image format'), { status: 400 });
-  }
-  if (type === 'voice' && !allowedVoice.includes(ext)) {
-    fs.unlinkSync(destPath);
-    throw Object.assign(new Error('Invalid audio format'), { status: 400 });
-  }
-  if (type === 'document' && !allowedDocs.includes(ext)) {
-    fs.unlinkSync(destPath);
-    throw Object.assign(new Error('Only PDF allowed'), { status: 400 });
-  }
-
-  const url = `/uploads/${filename}`;
-  const record = {
+  const url = `/uploads/${type}/${filename}`;
+  return model.create({
     id: uuidv4(),
     user_id: userId,
     original_name: file.originalname,
@@ -52,18 +30,15 @@ exports.uploadFile = async (userId, file, type) => {
     url,
     path: destPath,
     type,
-  };
+  });
+}
 
-  await UploadModel.save(record);
-  return { id: record.id, url, original_name: file.originalname, size: file.size, type };
-};
-
-exports.delete = async (userId, id) => {
-  const file = await UploadModel.findById(id);
+async function deleteFile(userId, id) {
+  const file = await model.remove(id);
   if (!file) throw Object.assign(new Error('File not found'), { status: 404 });
   if (file.user_id !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
-
   if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-  await UploadModel.delete(id);
   return { message: 'File deleted' };
-};
+}
+
+module.exports = { uploadFile, deleteFile };

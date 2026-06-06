@@ -1,42 +1,28 @@
-const { del, incr, decr, get, set } = require('../../config/cache');
-const db = require('../../config/db');
-const NotificationModel = require('./notification.model');
+const model = require('./notification.model');
 
-exports.list = async (userId, query) => {
-  const { page = 1, limit = 20 } = query;
-  const cacheKey = `notifications:${userId}:${page}:${limit}`;
+async function list(userId, { page, limit }) {
+  return model.findByUser(userId, Number(page) || 1, Number(limit) || 20);
+}
 
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+async function markRead(userId, id) {
+  await model.markRead(id);
+  return { message: 'Marked as read' };
+}
 
-  const result = await NotificationModel.list(userId, { page: Number(page), limit: Number(limit) });
-  await set(cacheKey, result, 30);
-  return result;
-};
+async function markAllRead(userId) {
+  await model.markAllRead(userId);
+  return { message: 'All marked as read' };
+}
 
-exports.markRead = async (userId, id) => {
-  await NotificationModel.markRead(id, userId);
-  await del(`notifications:${userId}:*`);
-  await del(`notifications:unread:${userId}`);
-};
+async function unreadCount(userId) {
+  const count = await model.unreadCount(userId);
+  return { count };
+}
 
-exports.markAllRead = async (userId) => {
-  await NotificationModel.markAllRead(userId);
-  await del(`notifications:${userId}:*`);
-  await del(`notifications:unread:${userId}`);
-};
-
-exports.unreadCount = async (userId) => {
-  const cacheKey = `notifications:unread:${userId}`;
-  const cached = await get(cacheKey);
-  if (cached !== null) return cached;
-
-  const count = await NotificationModel.unreadCount(userId);
-  await set(cacheKey, count, 30);
-  return count;
-};
-
-exports.updateFcmToken = async (userId, fcm_token) => {
-  await db.query('UPDATE users SET fcm_token = ? WHERE id = ?', [fcm_token, userId]);
+async function updateFcmToken(userId, { fcm_token }) {
+  const authModel = require('../auth/auth.model');
+  await authModel.updateFcmToken(userId, fcm_token);
   return { message: 'FCM token updated' };
-};
+}
+
+module.exports = { list, markRead, markAllRead, unreadCount, updateFcmToken };

@@ -1,52 +1,29 @@
-const QuranService = require('./quran.service');
+const service = require('./quran.service');
 
 exports.listSurahs = async (req, res, next) => {
-  try {
-    const result = await QuranService.listSurahs();
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.listSurahs()); } catch (e) { next(e); }
 };
 
 exports.getSurah = async (req, res, next) => {
-  try {
-    const translation = req.query.translation || 'en';
-    const result = await QuranService.getSurah(Number(req.params.id), translation);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.getSurah(Number(req.params.id), req.query.translation)); } catch (e) { next(e); }
 };
 
 exports.getVerse = async (req, res, next) => {
-  try {
-    const translation = req.query.translation || 'en';
-    const result = await QuranService.getVerse(req.params.key, translation);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.getVerse(req.params.key, req.query.translation)); } catch (e) { next(e); }
 };
 
 exports.search = async (req, res, next) => {
-  try {
-    const result = await QuranService.search(req.query);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.search(req.query.q, req.query.translation, req.query.page, req.query.limit)); } catch (e) { next(e); }
 };
 
 exports.addBookmark = async (req, res, next) => {
-  try {
-    const result = await QuranService.addBookmark(req.user.id, req.body);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.addBookmark(req.user.id, req.body)); } catch (e) { next(e); }
 };
 
 exports.listBookmarks = async (req, res, next) => {
-  try {
-    const result = await QuranService.listBookmarks(req.user.id);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.listBookmarks(req.user.id)); } catch (e) { next(e); }
 };
 
-exports.deleteBookmark = async (req, res, next) => {
-  try {
-    const result = await QuranService.deleteBookmark(req.user.id, req.params.id);
-    res.json(result);
-  } catch (e) { next(e); }
+exports.removeBookmark = async (req, res, next) => {
+  try { res.json(await service.removeBookmark(Number(req.params.id))); } catch (e) { next(e); }
 };

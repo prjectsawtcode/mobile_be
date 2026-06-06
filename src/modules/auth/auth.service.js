@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-const { redis } = require('../../config/cache');
+const { get: cacheGet, set: cacheSet, del: cacheDel } = require('../../config/cache');
 const model = require('./auth.model');
 
 // Create a short-lived JWT (15 min) containing user id, phone, and role
@@ -29,16 +29,16 @@ async function register({ phone, password, name, email, gender }) {
     throw err;
   }
 
-  const otp = '123456';
-  redis.set(`otp:${phone}`, otp, 'EX', 300).catch(() => {});
+  const otp = '1111';
+  await cacheSet(`otp:${phone}`, otp, 300);
   return { message: 'Registration successful. Verify OTP.', user_id: id };
 }
 
 // Verify OTP: match against Redis value, mark phone_verified in DB, delete OTP
 async function verifyOtp({ phone, otp }) {
-  const stored = await redis.get(`otp:${phone}`).catch(() => null);
+  const stored = await cacheGet(`otp:${phone}`);
   if (!stored || stored !== otp) throw Object.assign(new Error('Invalid or expired OTP'), { status: 400 });
-  redis.del(`otp:${phone}`).catch(() => {});
+  await cacheDel(`otp:${phone}`);
   await model.markPhoneVerified(phone);
   return { message: 'Phone verified successfully' };
 }
@@ -120,18 +120,17 @@ async function forgotPassword({ phone }) {
   if (!user) return { message: 'OTP sent for password reset' };
 
   const otp = '123456';
-  redis.set(`otp:reset:${phone}`, otp, 'EX', 300).catch(() => {});
+  await cacheSet(`otp:reset:${phone}`, otp, 300);
   return { message: 'OTP sent for password reset' };
 }
 
-// Reset password: validate OTP, hash new password, update DB, delete OTP
 async function resetPassword({ phone, otp, password }) {
-  const stored = await redis.get(`otp:reset:${phone}`).catch(() => null);
+  const stored = await cacheGet(`otp:reset:${phone}`);
   if (!stored || stored !== otp) throw Object.assign(new Error('Invalid or expired OTP'), { status: 400 });
 
   const password_hash = await bcrypt.hash(password, 12);
   await model.updatePassword(phone, password_hash);
-  redis.del(`otp:reset:${phone}`).catch(() => {});
+  await cacheDel(`otp:reset:${phone}`);
   return { message: 'Password reset successfully' };
 }
 

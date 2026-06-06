@@ -1,73 +1,49 @@
-const { get, set, del } = require('../../config/cache');
-const QuranModel = require('./quran.model');
+const model = require('./quran.model');
+const { get, set } = require('../../config/cache');
 
-exports.listSurahs = async () => {
-  const cacheKey = 'quran:surahs';
-  const cached = await get(cacheKey);
+async function listSurahs() {
+  let cached = await get('quran:surahs');
   if (cached) return cached;
-
-  const surahs = await QuranModel.listSurahs();
-  await set(cacheKey, surahs);
+  const surahs = await model.getSurahs();
+  await set('quran:surahs', surahs, 86400);
   return surahs;
-};
+}
 
-exports.getSurah = async (id, translation = 'en') => {
-  const cacheKey = `quran:surah:${id}:${translation}`;
-  const cached = await get(cacheKey);
+async function getSurah(id, translation) {
+  const key = `quran:surah:${id}:${translation || 'ar'}`;
+  let cached = await get(key);
   if (cached) return cached;
-
-  const surah = await QuranModel.getSurah(id);
+  const surah = await model.getSurah(id, translation);
   if (!surah) throw Object.assign(new Error('Surah not found'), { status: 404 });
-
-  await set(cacheKey, surah);
+  await set(key, surah, 86400);
   return surah;
-};
+}
 
-exports.getVerse = async (verseKey, translation = 'en') => {
-  const [surahNum, verseNum] = verseKey.split(':').map(Number);
-  if (!surahNum || !verseNum) throw Object.assign(new Error('Invalid verse key. Use surah:verse format'), { status: 400 });
-
-  const cacheKey = `quran:verse:${verseKey}:${translation}`;
-  const cached = await get(cacheKey);
+async function getVerse(key, translation) {
+  const [surahNum, verseNum] = key.split(':').map(Number);
+  const cacheKey = `quran:verse:${key}:${translation || 'ar'}`;
+  let cached = await get(cacheKey);
   if (cached) return cached;
-
-  const verse = await QuranModel.getVerse(surahNum, verseNum);
+  const verse = await model.getVerse(surahNum, verseNum, translation);
   if (!verse) throw Object.assign(new Error('Verse not found'), { status: 404 });
-
-  await set(cacheKey, verse);
+  await set(cacheKey, verse, 86400);
   return verse;
-};
+}
 
-exports.search = async (query) => {
-  const { q, translation = 'en', page = 1, limit = 20 } = query;
-  const cacheKey = `quran:search:${q}:${translation}:${page}:${limit}`;
+async function search(q, translation, page, limit) {
+  return model.searchVerses(q, translation || 'en', Number(page) || 1, Number(limit) || 20);
+}
 
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+async function addBookmark(userId, { surah_id, verse_number }) {
+  return model.addBookmark(userId, surah_id, verse_number);
+}
 
-  const result = await QuranModel.searchVerses(q, translation, Number(page), Number(limit));
-  await set(cacheKey, result, 300);
-  return result;
-};
+async function listBookmarks(userId) {
+  return model.getBookmarks(userId);
+}
 
-exports.addBookmark = async (userId, data) => {
-  await QuranModel.addBookmark(userId, data.surah_id, data.verse_number);
-  await del(`quran:bookmarks:${userId}`);
-  return { message: 'Bookmarked' };
-};
+async function removeBookmark(id) {
+  return model.removeBookmark(id);
+}
 
-exports.listBookmarks = async (userId) => {
-  const cacheKey = `quran:bookmarks:${userId}`;
-  const cached = await get(cacheKey);
-  if (cached) return cached;
-
-  const bookmarks = await QuranModel.listBookmarks(userId);
-  await set(cacheKey, bookmarks, 30);
-  return bookmarks;
-};
-
-exports.deleteBookmark = async (userId, id) => {
-  await QuranModel.deleteBookmark(id, userId);
-  await del(`quran:bookmarks:${userId}`);
-  return { message: 'Bookmark removed' };
-};
+module.exports = { listSurahs, getSurah, getVerse, search, addBookmark, listBookmarks, removeBookmark };

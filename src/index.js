@@ -1,26 +1,22 @@
 require('dotenv').config();
 const express = require('express');
-const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const path = require('path');
 const errorHandler = require('./middleware/errorHandler');
+const db = require('./db/init');
 
 const app = express();
 
-// Middleware
-app.use(helmet());
 app.use(cors());
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(morgan('short'));
 app.use(express.json({ limit: '10mb' }));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, '..', process.env.UPLOAD_DIR || 'uploads')));
-
-// Routes
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-// Modules
 app.use('/api/v1/auth', require('./modules/auth/auth.routes'));
 app.use('/api/v1/users', require('./modules/user/user.routes'));
 app.use('/api/v1/announcements', require('./modules/announcement/announcement.routes'));
@@ -34,10 +30,19 @@ app.use('/api/v1/subscriptions', require('./modules/subscription/subscription.ro
 app.use('/api/v1/notifications', require('./modules/notification/notification.routes'));
 app.use('/api/v1/uploads', require('./modules/upload/upload.routes'));
 
-// Error handler
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+async function start() {
+  try {
+    await db.init();
+    await db.seed();
+    app.listen(PORT, () => console.log(`SawtDeen API running on port ${PORT}`));
+  } catch (err) {
+    console.error('Failed to start:', err);
+    process.exit(1);
+  }
+}
+
+start();

@@ -1,70 +1,56 @@
 const { v4: uuidv4 } = require('uuid');
-const { get, set, del } = require('../../config/cache');
-const CommunityModel = require('./community.model');
+const model = require('./community.model');
 
-exports.listPosts = async (query) => {
-  const { page = 1, limit = 20 } = query;
-  const cacheKey = `community:posts:${page}:${limit}`;
+async function listPosts(query) {
+  return model.getPosts(Number(query.page) || 1, Number(query.limit) || 20);
+}
 
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+async function createPost(userId, { content, image_url }) {
+  return model.createPost({ id: uuidv4(), author_id: userId, content, image_url });
+}
 
-  const result = await CommunityModel.listPosts({ page: Number(page), limit: Number(limit) });
-  await set(cacheKey, result, 30);
-  return result;
-};
-
-exports.createPost = async (userId, data) => {
-  const post = { id: uuidv4(), author_id: userId, ...data };
-  await CommunityModel.createPost(post);
-  await del('community:posts:1:20');
-  return post;
-};
-
-exports.deletePost = async (userId, postId, userRole) => {
-  const post = await CommunityModel.findPost(postId);
-  if (!post) throw Object.assign(new Error('Post not found'), { status: 404 });
-  if (post.author_id !== userId && userRole !== 'admin') {
-    throw Object.assign(new Error('Forbidden'), { status: 403 });
-  }
-  await CommunityModel.softDeletePost(postId);
+async function deletePost(userId, postId) {
+  const { pool } = require('../../config/db');
+  const [posts] = await pool.query(
+    'SELECT author_id FROM community_posts WHERE id = ?', [postId]
+  );
+  if (!posts[0]) throw Object.assign(new Error('Post not found'), { status: 404 });
+  if (posts[0].author_id !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+  await model.softDelete(postId);
   return { message: 'Post deleted' };
-};
+}
 
-exports.toggleLike = async (postId, userId) => {
-  const post = await CommunityModel.findPost(postId);
-  if (!post) throw Object.assign(new Error('Post not found'), { status: 404 });
+async function toggleLike(userId, postId) {
+  const { pool } = require('../../config/db');
+  const [posts] = await pool.query(
+    'SELECT id FROM community_posts WHERE id = ?', [postId]
+  );
+  if (!posts[0]) throw Object.assign(new Error('Post not found'), { status: 404 });
+  return model.toggleLike(postId, userId);
+}
 
-  const result = await CommunityModel.toggleLike(postId, userId);
-  return result;
-};
+async function listComments(postId) {
+  return model.getComments(postId);
+}
 
-exports.getComments = async (postId) => {
-  const cacheKey = `community:comments:${postId}`;
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+async function createComment(userId, postId, { content }) {
+  const { pool } = require('../../config/db');
+  const [posts] = await pool.query(
+    'SELECT id FROM community_posts WHERE id = ?', [postId]
+  );
+  if (!posts[0]) throw Object.assign(new Error('Post not found'), { status: 404 });
+  return model.createComment({ id: uuidv4(), post_id: postId, author_id: userId, content });
+}
 
-  const comments = await CommunityModel.getComments(postId);
-  await set(cacheKey, comments, 30);
-  return comments;
-};
-
-exports.addComment = async (userId, postId, data) => {
-  const post = await CommunityModel.findPost(postId);
-  if (!post) throw Object.assign(new Error('Post not found'), { status: 404 });
-
-  const comment = { id: uuidv4(), post_id: postId, author_id: userId, ...data };
-  await CommunityModel.addComment(comment);
-  await del(`community:comments:${postId}`);
-  return comment;
-};
-
-exports.deleteComment = async (userId, commentId, userRole) => {
-  const comment = await CommunityModel.findComment(commentId);
-  if (!comment) throw Object.assign(new Error('Comment not found'), { status: 404 });
-  if (comment.author_id !== userId && userRole !== 'admin') {
-    throw Object.assign(new Error('Forbidden'), { status: 403 });
-  }
-  await CommunityModel.softDeleteComment(commentId);
+async function deleteComment(userId, commentId) {
+  const { pool } = require('../../config/db');
+  const [comments] = await pool.query(
+    'SELECT author_id FROM community_comments WHERE id = ?', [commentId]
+  );
+  if (!comments[0]) throw Object.assign(new Error('Comment not found'), { status: 404 });
+  if (comments[0].author_id !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+  await model.deleteComment(commentId);
   return { message: 'Comment deleted' };
-};
+}
+
+module.exports = { listPosts, createPost, deletePost, toggleLike, listComments, createComment, deleteComment };

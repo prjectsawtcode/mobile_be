@@ -8,7 +8,7 @@ exports.create = Joi.object({
   category: Joi.string().required(),
   privacy: Joi.string().valid('everyone', 'masjid').default('everyone'),
   start_date: Joi.date().iso().required(),
-  end_date: Joi.date().iso().greater(Joi.ref('start_date')).required(),
+  end_date: Joi.date().iso().min(Joi.ref('start_date')).allow(null),
 });
 
 exports.update = Joi.object({
@@ -19,5 +19,5 @@ exports.update = Joi.object({
   category: Joi.string(),
   privacy: Joi.string().valid('everyone', 'masjid'),
   start_date: Joi.date().iso(),
-  end_date: Joi.date().iso(),
+  end_date: Joi.date().iso().allow(null),
 });

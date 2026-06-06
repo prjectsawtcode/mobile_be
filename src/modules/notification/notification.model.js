@@ -1,46 +1,52 @@
-const db = require('../../config/db');
+const { pool } = require('../../config/db');
 
-const NotificationModel = {
-  async list(userId, { page, limit }) {
-    const offset = (page - 1) * limit;
-    const [rows] = await db.query(
-      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
-      [userId, String(limit), String(offset)]
-    );
-    const [{ count }] = await db.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ?',
-      [userId]
-    );
-    return { rows, total: count, page, limit };
-  },
+const createTable = `
+  CREATE TABLE IF NOT EXISTS notifications (
+    id CHAR(36) PRIMARY KEY,
+    user_id CHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT,
+    type ENUM('prayer','chat','fatwa','announcement','system') NOT NULL,
+    data JSON,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`;
 
-  async markRead(id, userId) {
-    await db.query('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?', [id, userId]);
-  },
+async function init() {
+  await pool.query(createTable);
+}
 
-  async markAllRead(userId) {
-    await db.query('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0', [userId]);
-  },
+async function findByUser(userId, page, limit) {
+  const offset = (page - 1) * limit;
+  const [[{ total }]] = await pool.query('SELECT COUNT(*) as total FROM notifications WHERE user_id = ?', [userId]);
+  const [rows] = await pool.query(
+    'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    [userId, Number(limit), Number(offset)]
+  );
+  return { rows, total, page, limit };
+}
 
-  async unreadCount(userId) {
-    const [rows] = await db.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0',
-      [userId]
-    );
-    return rows[0].count;
-  },
+async function markRead(id) {
+  await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = ?', [id]);
+}
 
-  async create(data) {
-    await db.query('INSERT INTO notifications SET ?', data);
-  },
+async function markAllRead(userId) {
+  await pool.query('UPDATE notifications SET is_read = TRUE WHERE user_id = ?', [userId]);
+}
 
-  async getFcmTokens() {
-    const [rows] = await db.query(
-      'SELECT id, fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ?',
-      ['']
-    );
-    return rows;
-  },
-};
+async function unreadCount(userId) {
+  const [[{ count }]] = await pool.query(
+    'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE', [userId]
+  );
+  return count;
+}
 
-module.exports = NotificationModel;
+async function create(data) {
+  await pool.query(
+    'INSERT INTO notifications (id, user_id, title, body, type, data) VALUES (?, ?, ?, ?, ?, ?)',
+    [data.id, data.user_id, data.title, data.body, data.type, JSON.stringify(data.data)]
+  );
+}
+
+module.exports = { init, findByUser, markRead, markAllRead, unreadCount, create };

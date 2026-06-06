@@ -1,15 +1,13 @@
 const { Router } = require('express');
 const { authenticate } = require('../../middleware/auth');
-const validate = require('../../middleware/validate');
-const ctrl = require('./subscription.controller');
-const schema = require('./subscription.validation');
+const controller = require('./subscription.controller');
 
 const router = Router();
 
-router.get('/plans', ctrl.listPlans);
-router.get('/my', authenticate, ctrl.getMySubscription);
-router.post('/purchase', authenticate, validate(schema.purchase), ctrl.purchase);
-router.post('/webhook', ctrl.webhook);
-router.get('/history', authenticate, ctrl.getHistory);
+router.get('/plans', controller.getPlans);
+router.get('/my', authenticate, controller.getMySubscription);
+router.post('/purchase', authenticate, controller.purchase);
+router.post('/webhook', controller.webhook);
+router.get('/history', authenticate, controller.getHistory);
 
 module.exports = router;

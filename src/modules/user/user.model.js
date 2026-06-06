@@ -1,57 +1,69 @@
-const db = require('../../config/db');
+const { pool } = require('../../config/db');
 
-const UserModel = {
-  async findById(id) {
-    const [rows] = await db.query(
-      'SELECT id, phone, name, email, gender, role, aadhar_verified, created_at, updated_at FROM users WHERE id = ?',
-      [id]
-    );
-    return rows[0];
-  },
+const createTable = `
+  CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id CHAR(36) PRIMARY KEY,
+    avatar_url TEXT,
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    date_of_birth DATE,
+    bio TEXT,
+    mosque_affiliation VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`;
 
-  async getProfile(userId) {
-    const [rows] = await db.query(
-      'SELECT * FROM user_profiles WHERE user_id = ?',
-      [userId]
-    );
-    return rows[0];
-  },
+async function init() {
+  await pool.query(createTable);
+}
 
-  async upsertProfile(userId, data) {
-    const existing = await this.getProfile(userId);
-    if (existing) {
-      await db.query('UPDATE user_profiles SET ? WHERE user_id = ?', [data, userId]);
-    } else {
-      await db.query('INSERT INTO user_profiles SET ?', { user_id: userId, ...data });
-    }
-  },
+async function findById(userId) {
+  const [rows] = await pool.query('SELECT * FROM user_profiles WHERE user_id = ?', [userId]);
+  return rows[0];
+}
 
-  async updateAvatar(userId, avatar_url) {
-    await db.query('UPDATE user_profiles SET avatar_url = ? WHERE user_id = ?', [avatar_url, userId]);
-  },
+async function upsert(userId, data) {
+  const existing = await findById(userId);
+  if (existing) {
+    const keys = Object.keys(data);
+    const sets = keys.map(k => `${k} = ?`).join(', ');
+    const vals = keys.map(k => data[k]);
+    await pool.query(`UPDATE user_profiles SET ${sets} WHERE user_id = ?`, [...vals, userId]);
+  } else {
+    const keys = ['user_id', ...Object.keys(data)];
+    const placeholders = keys.map(() => '?').join(', ');
+    const vals = [userId, ...Object.keys(data).map(k => data[k])];
+    await pool.query(`INSERT INTO user_profiles (${keys.join(',')}) VALUES (${placeholders})`, vals);
+  }
+}
 
-  async updateUser(userId, data) {
-    await db.query('UPDATE users SET ? WHERE id = ?', [data, userId]);
-  },
+async function updateAvatar(userId, url) {
+  await upsert(userId, { avatar_url: url });
+}
 
-  async list({ page, limit, search }) {
-    const offset = (page - 1) * limit;
-    let where = '';
-    const params = [];
-    if (search) {
-      where = 'WHERE name LIKE ? OR phone LIKE ?';
-      params.push(`%${search}%`, `%${search}%`);
-    }
-    const [rows] = await db.query(
-      `SELECT id, phone, name, email, gender, role, aadhar_verified, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...params, String(limit), String(offset)]
-    );
-    const [{ count }] = await db.query(
-      `SELECT COUNT(*) as count FROM users ${where}`,
-      params
-    );
-    return { rows, total: count, page, limit };
-  },
-};
+async function findAll({ page, limit, search }) {
+  let query = 'SELECT id, phone, name, email, gender, role, aadhar_verified, created_at FROM users';
+  let countQuery = 'SELECT COUNT(*) as total FROM users';
+  const params = [];
 
-module.exports = UserModel;
+  if (search) {
+    query += ' WHERE name LIKE ? OR phone LIKE ?';
+    countQuery += ' WHERE name LIKE ? OR phone LIKE ?';
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  const offset = (page - 1) * limit;
+  const [[{ total }]] = await pool.query(countQuery, params);
+  const [rows] = await pool.query(query, [...params, Number(limit), Number(offset)]);
+
+  return { rows, total, page, limit };
+}
+
+async function updateRole(userId, role) {
+  await pool.query('UPDATE users SET role = ? WHERE id = ?', [role, userId]);
+}
+
+module.exports = { init, findById, upsert, updateAvatar, findAll, updateRole };

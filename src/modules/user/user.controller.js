@@ -1,45 +1,25 @@
-const UserService = require('./user.service');
+const service = require('./user.service');
 
 exports.getMe = async (req, res, next) => {
-  try {
-    const result = await UserService.getMe(req.user.id);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.getMe(req.user.id)); } catch (e) { next(e); }
 };
 
-exports.updateProfile = async (req, res, next) => {
-  try {
-    const result = await UserService.updateProfile(req.user.id, req.body);
-    res.json(result);
-  } catch (e) { next(e); }
+exports.updateMe = async (req, res, next) => {
+  try { res.json(await service.updateMe(req.user.id, req.body)); } catch (e) { next(e); }
 };
 
 exports.updateAvatar = async (req, res, next) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const avatar_url = `/uploads/${req.file.filename}`;
-    const result = await UserService.updateAvatar(req.user.id, avatar_url);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.updateAvatar(req.user.id, req.file)); } catch (e) { next(e); }
 };
 
-exports.getPublicProfile = async (req, res, next) => {
-  try {
-    const result = await UserService.getPublicProfile(req.params.id);
-    res.json(result);
-  } catch (e) { next(e); }
+exports.getById = async (req, res, next) => {
+  try { res.json(await service.getPublicProfile(req.params.id)); } catch (e) { next(e); }
 };
 
 exports.list = async (req, res, next) => {
-  try {
-    const result = await UserService.listUsers(req.query);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.listUsers(req.query)); } catch (e) { next(e); }
 };
 
 exports.updateRole = async (req, res, next) => {
-  try {
-    const result = await UserService.updateRole(req.params.id, req.body.role);
-    res.json(result);
-  } catch (e) { next(e); }
+  try { res.json(await service.updateRole(req.params.id, req.body.role)); } catch (e) { next(e); }
 };

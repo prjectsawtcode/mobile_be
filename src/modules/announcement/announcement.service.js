@@ -1,64 +1,54 @@
 const { v4: uuidv4 } = require('uuid');
-const { get, set, delPattern } = require('../../config/cache');
-const AnnouncementModel = require('./announcement.model');
+const { delPattern } = require('../../config/cache');
+const model = require('./announcement.model');
 
-exports.list = async (query) => {
-  const { category, privacy, search, page = 1, limit = 20 } = query;
-  const cacheKey = `announcements:list:${category || ''}:${privacy || ''}:${search || ''}:${page}:${limit}`;
-
-  const cached = await get(cacheKey);
-  if (cached) return cached;
-
-  const result = await AnnouncementModel.list({
-    category, privacy, search,
-    page: Number(page), limit: Number(limit),
+async function list(query) {
+  return model.findAll({
+    category: query.category,
+    privacy: query.privacy,
+    page: Number(query.page) || 1,
+    limit: Number(query.limit) || 20,
+    search: query.search,
   });
-  await set(cacheKey, result, 60);
-  return result;
-};
+}
 
-exports.listExpired = async (query) => {
-  const { page = 1, limit = 20 } = query;
-  return AnnouncementModel.listExpired({ page: Number(page), limit: Number(limit) });
-};
+async function listExpired(query) {
+  return model.findExpired({
+    page: Number(query.page) || 1,
+    limit: Number(query.limit) || 20,
+  });
+}
 
-exports.getById = async (id) => {
-  const cacheKey = `announcement:${id}`;
-  const cached = await get(cacheKey);
-  if (cached) return cached;
-
-  const ann = await AnnouncementModel.findById(id);
-  if (!ann) throw Object.assign(new Error('Announcement not found'), { status: 404 });
-
-  await set(cacheKey, ann, 120);
+async function getById(id) {
+  const ann = await model.findById(id);
+  if (!ann) throw Object.assign(new Error('Not found'), { status: 404 });
   return ann;
-};
+}
 
-exports.create = async (authorId, data) => {
-  const announcement = {
+async function create(authorId, data) {
+  const ann = await model.create({
     id: uuidv4(),
     author_id: authorId,
     ...data,
-  };
-  await AnnouncementModel.create(announcement);
+  });
   await delPattern('announcements:*');
-  return announcement;
-};
+  return ann;
+}
 
-exports.update = async (id, data) => {
-  const ann = await AnnouncementModel.findById(id);
-  if (!ann) throw Object.assign(new Error('Announcement not found'), { status: 404 });
-
-  await AnnouncementModel.update(id, data);
+async function update(id, data) {
+  const existing = await model.findById(id);
+  if (!existing) throw Object.assign(new Error('Not found'), { status: 404 });
+  const ann = await model.update(id, data);
   await delPattern('announcements:*');
-  return { ...ann, ...data };
-};
+  return ann;
+}
 
-exports.delete = async (id) => {
-  const ann = await AnnouncementModel.findById(id);
-  if (!ann) throw Object.assign(new Error('Announcement not found'), { status: 404 });
-
-  await AnnouncementModel.delete(id);
+async function remove(id) {
+  const existing = await model.findById(id);
+  if (!existing) throw Object.assign(new Error('Not found'), { status: 404 });
+  await model.remove(id);
   await delPattern('announcements:*');
   return { message: 'Deleted' };
-};
+}
+
+module.exports = { list, listExpired, getById, create, update, remove };

@@ -5,6 +5,6 @@ exports.createPost = Joi.object({
   image_url: Joi.string().uri().allow('', null),
 });
 
-exports.addComment = Joi.object({
+exports.createComment = Joi.object({
   content: Joi.string().max(1000).required(),
 });

@@ -1,84 +1,67 @@
 const { v4: uuidv4 } = require('uuid');
-const { get, set, del } = require('../../config/cache');
-const SubscriptionModel = require('./subscription.model');
+const model = require('./subscription.model');
 
-exports.listPlans = async () => {
-  const cacheKey = 'subscription:plans';
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+async function getPlans() {
+  return model.getPlans();
+}
 
-  const plans = await SubscriptionModel.listPlans();
-  await set(cacheKey, plans, 3600);
-  return plans;
-};
+async function getMySubscription(userId) {
+  return model.getUserSubscription(userId);
+}
 
-exports.getMySubscription = async (userId) => {
-  const cacheKey = `subscription:user:${userId}`;
-  const cached = await get(cacheKey);
-  if (cached) return cached;
-
-  const sub = await SubscriptionModel.getUserSubscription(userId);
-  if (!sub) return null;
-
-  await set(cacheKey, sub, 60);
-  return sub;
-};
-
-exports.purchase = async (userId, { plan_id, gateway }) => {
-  const plan = await SubscriptionModel.findPlan(plan_id);
+async function purchase(userId, { plan_id, gateway }) {
+  const plan = await model.getPlanById(plan_id);
   if (!plan) throw Object.assign(new Error('Invalid plan'), { status: 400 });
 
   const subId = uuidv4();
-  const now = new Date();
   const expiresAt = plan.duration_days
-    ? new Date(now.getTime() + plan.duration_days * 86400000)
+    ? new Date(Date.now() + plan.duration_days * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
     : null;
 
-  await SubscriptionModel.createSubscription({
+  await model.createSubscription({
     id: subId,
     user_id: userId,
     plan_id,
-    status: 'active',
-    purchased_at: now,
+    status: 'pending',
     expires_at: expiresAt,
-    remaining_chats: plan.chat_limit || null,
+    remaining_chats: plan.chat_limit,
+    payment_ref: `SUB-${subId.slice(0, 8)}`,
   });
 
-  await SubscriptionModel.createTransaction({
-    id: uuidv4(),
+  const txnId = uuidv4();
+  await model.createTransaction({
+    id: txnId,
     user_id: userId,
     subscription_id: subId,
     amount: plan.price,
-    currency: 'INR',
-    gateway,
+    gateway: gateway || 'upi',
     status: 'pending',
+    gateway_ref: null,
   });
 
-  const upiIntent = `upi://pay?pa=${process.env.UPI_MERCHANT_ID}&pn=SawtDeen&am=${plan.price}&tr=${subId}`;
+  const upiIntent = `upi://pay?pa=merchant@upi&pn=SawtDeen&am=${plan.price}&tr=${subId}`;
 
-  await del(`subscription:user:${userId}`);
-  return { subscription_id: subId, amount: plan.price, upi_intent: upiIntent };
-};
+  return {
+    subscription_id: subId,
+    amount: parseFloat(plan.price),
+    upi_intent: upiIntent,
+  };
+}
 
-exports.handleWebhook = async (payload) => {
-  const { subscription_id, status, gateway_ref, signature } = payload;
-
-  const expectedSig = 'hmac_sha256'; // placeholder — implement HMAC verification
-  if (!signature) throw Object.assign(new Error('Invalid signature'), { status: 400 });
-
-  if (status === 'success') {
-    await SubscriptionModel.updateSubscription(subscription_id, { status: 'active' });
-    await SubscriptionModel.createTransaction({
-      id: uuidv4(),
-      subscription_id,
-      status: 'success',
-      gateway_ref,
-    });
-  }
-
+async function webhook(body) {
+  const { subscription_id, status, gateway_ref } = body;
+  const { pool } = require('../../config/db');
+  await pool.query('UPDATE user_subscriptions SET status = ?, payment_ref = ? WHERE id = ?',
+    [status === 'success' ? 'active' : 'expired', gateway_ref, subscription_id]);
+  await pool.query(
+    'UPDATE payment_transactions SET status = ?, gateway_ref = ? WHERE subscription_id = ? ORDER BY created_at DESC LIMIT 1',
+    [status, gateway_ref, subscription_id]
+  );
   return { message: 'Webhook processed' };
-};
+}
 
-exports.getHistory = async (userId) => {
-  return SubscriptionModel.getHistory(userId);
-};
+async function getHistory(userId) {
+  return model.getHistory(userId);
+}
+
+module.exports = { getPlans, getMySubscription, purchase, webhook, getHistory };

@@ -1,62 +1,61 @@
-const { del, get, set, delPattern } = require('../../config/cache');
-const UserModel = require('./user.model');
+const { v4: uuidv4 } = require('uuid');
+const model = require('./user.model');
+const authModel = require('../auth/auth.model');
+const { pool } = require('../../config/db');
 
-exports.getMe = async (userId) => {
-  const cacheKey = `user:${userId}`;
-  const cached = await get(cacheKey);
-  if (cached) return cached;
+function calcCompletion(profile) {
+  if (!profile) return 0;
+  const fields = [profile.avatar_url, profile.address, profile.city, profile.state,
+    profile.date_of_birth, profile.bio, profile.mosque_affiliation];
+  const filled = fields.filter(Boolean).length;
+  return Math.round((filled / fields.length) * 100);
+}
 
-  const user = await UserModel.findById(userId);
+async function getMe(userId) {
+  const user = await authModel.findById(userId);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
+  const profile = await model.findById(userId);
+  return { ...user, profile: profile || {}, profile_completion: calcCompletion(profile) };
+}
 
-  const profile = await UserModel.getProfile(userId);
-  const result = { ...user, profile: profile || {} };
+async function updateMe(userId, data) {
+  const { name, bio, city, state, address, date_of_birth, mosque_affiliation } = data;
+  if (name) await pool.query('UPDATE users SET name = ? WHERE id = ?', [name, userId]);
+  const profileData = {};
+  if (bio !== undefined) profileData.bio = bio;
+  if (city !== undefined) profileData.city = city;
+  if (state !== undefined) profileData.state = state;
+  if (address !== undefined) profileData.address = address;
+  if (date_of_birth !== undefined) profileData.date_of_birth = date_of_birth;
+  if (mosque_affiliation !== undefined) profileData.mosque_affiliation = mosque_affiliation;
+  if (Object.keys(profileData).length) await model.upsert(userId, profileData);
+  return getMe(userId);
+}
 
-  const filled = Object.values(profile || {}).filter(v => v !== null && v !== undefined && v !== '').length;
-  const totalFields = 8;
-  result.profile_completion = Math.round((filled / totalFields) * 100);
+async function updateAvatar(userId, file) {
+  if (!file) throw Object.assign(new Error('No file uploaded'), { status: 400 });
+  const url = `/uploads/${file.filename}`;
+  await model.updateAvatar(userId, url);
+  return { avatar_url: url };
+}
 
-  await set(cacheKey, result, 60);
-  return result;
-};
-
-exports.updateProfile = async (userId, data) => {
-  if (data.gender) throw Object.assign(new Error('Gender is immutable'), { status: 400 });
-
-  await UserModel.upsertProfile(userId, data);
-  await del(`user:${userId}`);
-
-  return this.getMe(userId);
-};
-
-exports.updateAvatar = async (userId, avatar_url) => {
-  await UserModel.updateAvatar(userId, avatar_url);
-  await del(`user:${userId}`);
-  return { avatar_url };
-};
-
-exports.getPublicProfile = async (id) => {
-  const user = await UserModel.findById(id);
+async function getPublicProfile(id) {
+  const user = await authModel.findById(id);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
-  const profile = await UserModel.getProfile(id);
+  const profile = await model.findById(id);
+  delete user.phone;
   return { ...user, profile: profile || {} };
-};
+}
 
-exports.listUsers = async (query) => {
-  const { page = 1, limit = 20, search } = query;
-  const cacheKey = `users:list:${page}:${limit}:${search || ''}`;
+async function listUsers({ page = 1, limit = 20, search }) {
+  return model.findAll({ page: Number(page), limit: Number(limit), search });
+}
 
-  const cached = await get(cacheKey);
-  if (cached) return cached;
-
-  const result = await UserModel.list({ page: Number(page), limit: Number(limit), search });
-  await set(cacheKey, result, 120);
-  return result;
-};
-
-exports.updateRole = async (userId, role) => {
-  await UserModel.updateUser(userId, { role });
-  await del(`user:${userId}`);
-  await delPattern('users:list:*');
+async function updateRole(userId, role) {
+  const valid = ['user', 'admin', 'scholar'];
+  if (!valid.includes(role)) throw Object.assign(new Error('Invalid role'), { status: 400 });
+  await model.updateRole(userId, role);
   return { message: 'Role updated' };
-};
+}
+
+module.exports = { getMe, updateMe, updateAvatar, getPublicProfile, listUsers, updateRole };
