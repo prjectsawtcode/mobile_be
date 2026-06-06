@@ -25,4 +25,11 @@ async function updateFcmToken(userId, { fcm_token }) {
   return { message: 'FCM token updated' };
 }
 
-module.exports = { list, markRead, markAllRead, unreadCount, updateFcmToken };
+async function createReminder(userId, { type, title, body, data }) {
+  const { v4: uuidv4 } = require('uuid');
+  const id = uuidv4();
+  await model.create({ id, user_id: userId, title, body, type, data });
+  return { message: 'Reminder created' };
+}
+
+module.exports = { list, markRead, markAllRead, unreadCount, updateFcmToken, createReminder };

@@ -29,6 +29,10 @@ app.use('/api/v1/community', require('./modules/community/community.routes'));
 app.use('/api/v1/subscriptions', require('./modules/subscription/subscription.routes'));
 app.use('/api/v1/notifications', require('./modules/notification/notification.routes'));
 app.use('/api/v1/uploads', require('./modules/upload/upload.routes'));
+app.use('/api/v1/payments', require('./modules/payment/payment.routes'));
+app.use('/api/v1/tour-packages', require('./modules/tour_package/tour_package.routes'));
+app.use('/api/v1/shopping', require('./modules/shopping/shopping.routes'));
+app.use('/api/v1/food-order', require('./modules/food_order/food_order.routes'));
 
 app.use(errorHandler);
 

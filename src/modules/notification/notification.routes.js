@@ -9,5 +9,6 @@ router.patch('/:id/read', authenticate, controller.markRead);
 router.patch('/read-all', authenticate, controller.markAllRead);
 router.get('/unread-count', authenticate, controller.unreadCount);
 router.put('/fcm-token', authenticate, controller.updateFcmToken);
+router.post('/reminder', authenticate, controller.createReminder);
 
 module.exports = router;

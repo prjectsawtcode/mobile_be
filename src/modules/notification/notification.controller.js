@@ -19,3 +19,7 @@ exports.unreadCount = async (req, res, next) => {
 exports.updateFcmToken = async (req, res, next) => {
   try { res.json(await service.updateFcmToken(req.user.id, req.body)); } catch (e) { next(e); }
 };
+
+exports.createReminder = async (req, res, next) => {
+  try { res.json(await service.createReminder(req.user.id, req.body)); } catch (e) { next(e); }
+};

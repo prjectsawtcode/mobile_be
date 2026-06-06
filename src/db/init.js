@@ -11,6 +11,10 @@ const communityModel = require('../modules/community/community.model');
 const subscriptionModel = require('../modules/subscription/subscription.model');
 const notificationModel = require('../modules/notification/notification.model');
 const uploadModel = require('../modules/upload/upload.model');
+const paymentModel = require('../modules/payment/payment.model');
+const tourPackageModel = require('../modules/tour_package/tour_package.model');
+const shoppingModel = require('../modules/shopping/shopping.model');
+const foodOrderModel = require('../modules/food_order/food_order.model');
 
 async function init() {
   console.log('Initializing database tables...');
@@ -26,6 +30,10 @@ async function init() {
   await subscriptionModel.init();
   await notificationModel.init();
   await uploadModel.init();
+  await paymentModel.init();
+  await tourPackageModel.init();
+  await shoppingModel.init();
+  await foodOrderModel.init();
   console.log('All tables initialized.');
 }
 

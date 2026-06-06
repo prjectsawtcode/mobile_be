@@ -1,12 +1,17 @@
 const { pool } = require('../../config/db');
 
+const alterTypeEnum = `
+  ALTER TABLE notifications
+  MODIFY COLUMN type ENUM('prayer','chat','fatwa','announcement','system','payment','quran','zikr') NOT NULL
+`;
+
 const createTable = `
   CREATE TABLE IF NOT EXISTS notifications (
     id CHAR(36) PRIMARY KEY,
     user_id CHAR(36) NOT NULL,
     title VARCHAR(255) NOT NULL,
     body TEXT,
-    type ENUM('prayer','chat','fatwa','announcement','system') NOT NULL,
+    type ENUM('prayer','chat','fatwa','announcement','system','payment','quran','zikr') NOT NULL,
     data JSON,
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -15,6 +20,7 @@ const createTable = `
 
 async function init() {
   await pool.query(createTable);
+  try { await pool.query(alterTypeEnum); } catch (_) { /* column may already have new types */ }
 }
 
 async function findByUser(userId, page, limit) {

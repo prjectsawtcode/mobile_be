@@ -17,7 +17,10 @@ exports.toggleLike = async (req, res, next) => {
 };
 
 exports.listComments = async (req, res, next) => {
-  try { res.json(await service.listComments(req.params.id)); } catch (e) { next(e); }
+  try {
+    const comments = await service.listComments(req.params.id);
+    res.json({ rows: comments });
+  } catch (e) { next(e); }
 };
 
 exports.createComment = async (req, res, next) => {

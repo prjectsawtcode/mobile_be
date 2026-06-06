@@ -1,0 +1,16 @@
+const { Router } = require('express');
+const { authenticate, authorize } = require('../../middleware/auth');
+const validate = require('../../middleware/validate');
+const controller = require('./tour_package.controller');
+const schema = require('./tour_package.validation');
+
+const router = Router();
+
+router.get('/', authenticate, controller.list);
+router.get('/my', authenticate, controller.listMy);
+router.get('/:id', authenticate, controller.getById);
+router.post('/', authenticate, authorize('admin', 'subscriber'), validate(schema.create), controller.create);
+router.patch('/:id', authenticate, authorize('admin', 'subscriber'), validate(schema.update), controller.update);
+router.delete('/:id', authenticate, authorize('admin', 'subscriber'), controller.remove);
+
+module.exports = router;

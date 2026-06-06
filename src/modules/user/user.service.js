@@ -3,6 +3,13 @@ const model = require('./user.model');
 const authModel = require('../auth/auth.model');
 const { pool } = require('../../config/db');
 
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+function resolveUrl(url) {
+  if (!url || url.startsWith('http')) return url;
+  return `${BASE_URL}${url}`;
+}
+
 function calcCompletion(profile) {
   if (!profile) return 0;
   const fields = [profile.avatar_url, profile.address, profile.city, profile.state,
@@ -15,6 +22,7 @@ async function getMe(userId) {
   const user = await authModel.findById(userId);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
   const profile = await model.findById(userId);
+  if (profile) profile.avatar_url = resolveUrl(profile.avatar_url);
   return { ...user, profile: profile || {}, profile_completion: calcCompletion(profile) };
 }
 
@@ -34,7 +42,8 @@ async function updateMe(userId, data) {
 
 async function updateAvatar(userId, file) {
   if (!file) throw Object.assign(new Error('No file uploaded'), { status: 400 });
-  const url = `/uploads/${file.filename}`;
+  const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+  const url = `${BASE_URL}/uploads/${file.filename}`;
   await model.updateAvatar(userId, url);
   return { avatar_url: url };
 }
@@ -43,6 +52,7 @@ async function getPublicProfile(id) {
   const user = await authModel.findById(id);
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
   const profile = await model.findById(id);
+  if (profile) profile.avatar_url = resolveUrl(profile.avatar_url);
   delete user.phone;
   return { ...user, profile: profile || {} };
 }
