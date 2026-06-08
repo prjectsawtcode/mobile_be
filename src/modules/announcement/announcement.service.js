@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const { delPattern } = require('../../config/cache');
 const model = require('./announcement.model');
 
@@ -27,7 +27,7 @@ async function getById(id) {
 
 async function create(authorId, data) {
   const ann = await model.create({
-    id: uuidv4(),
+    id: randomUUID(),
     author_id: authorId,
     ...data,
   });

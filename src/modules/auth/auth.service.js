@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const { get: cacheGet, set: cacheSet, del: cacheDel } = require('../../config/cache');
 const model = require('./auth.model');
 
@@ -18,7 +18,7 @@ async function register({ phone, password, name, email, gender }) {
   const existing = await model.findByPhone(phone);
   if (existing) throw Object.assign(new Error('Phone already registered'), { status: 409 });
 
-  const id = uuidv4();
+  const id = randomUUID();
   const password_hash = await bcrypt.hash(password, 12);
   try {
     await model.create({ id, phone, name, email, gender, password_hash });
@@ -72,9 +72,9 @@ async function login({ phone, password, fcm_token }) {
   }
 
   const access_token = generateAccessToken(user);
-  const refresh_token = uuidv4();
+  const refresh_token = randomUUID();
   console.log('[LOGIN:SERVICE] Saving refresh token');
-  await model.saveRefreshToken(uuidv4(), user.id, refresh_token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+  await model.saveRefreshToken(randomUUID(), user.id, refresh_token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
   console.log('[LOGIN:SERVICE] Login complete for user:', user.id);
   return {
@@ -102,8 +102,8 @@ async function refresh(refreshToken) {
   if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 
   const access_token = generateAccessToken(user);
-  const new_refresh_token = uuidv4();
-  await model.saveRefreshToken(uuidv4(), user.id, new_refresh_token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+  const new_refresh_token = randomUUID();
+  await model.saveRefreshToken(randomUUID(), user.id, new_refresh_token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
   return { access_token, refresh_token: new_refresh_token };
 }

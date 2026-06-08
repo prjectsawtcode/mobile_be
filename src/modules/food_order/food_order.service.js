@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./food_order.model');
 
 async function getMenu(providerId) {
@@ -24,7 +24,7 @@ async function getCategoryById(id) {
 
 async function createCategory(providerId, data) {
   return model.createCategory({
-    id: uuidv4(),
+    id: randomUUID(),
     provider_id: providerId,
     ...data,
   });
@@ -55,7 +55,7 @@ async function getMenuItems(categoryId) {
 
 async function createMenuItem(providerId, data) {
   return model.createMenuItem({
-    id: uuidv4(),
+    id: randomUUID(),
     provider_id: providerId,
     ...data,
   });

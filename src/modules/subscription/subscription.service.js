@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./subscription.model');
 
 async function getPlans() {
@@ -13,7 +13,7 @@ async function purchase(userId, { plan_id, gateway }) {
   const plan = await model.getPlanById(plan_id);
   if (!plan) throw Object.assign(new Error('Invalid plan'), { status: 400 });
 
-  const subId = uuidv4();
+  const subId = randomUUID();
   const expiresAt = plan.duration_days
     ? new Date(Date.now() + plan.duration_days * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
     : null;
@@ -28,7 +28,7 @@ async function purchase(userId, { plan_id, gateway }) {
     payment_ref: `SUB-${subId.slice(0, 8)}`,
   });
 
-  const txnId = uuidv4();
+  const txnId = randomUUID();
   await model.createTransaction({
     id: txnId,
     user_id: userId,

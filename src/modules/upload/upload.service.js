@@ -1,43 +1,42 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const model = require('./upload.model');
-
-const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
+const b2 = require('../../utils/b2');
 
 async function uploadFile(userId, file, type) {
   if (!file) throw Object.assign(new Error('No file provided'), { status: 400 });
 
   const ext = path.extname(file.originalname);
-  const filename = `${uuidv4()}${ext}`;
-  const destDir = path.join(UPLOAD_DIR, type);
-  ensureDir(destDir);
-  const destPath = path.join(destDir, filename);
+  const filename = `${type}/${randomUUID()}${ext}`;
 
-  fs.renameSync(file.path, destPath);
+  try {
+    const { fileId } = await b2.uploadFile(file.path, filename, file.mimetype);
+    const downloadUrl = await b2.getDownloadUrl(filename);
 
-  const url = `/uploads/${type}/${filename}`;
-  return model.create({
-    id: uuidv4(),
-    user_id: userId,
-    original_name: file.originalname,
-    mime_type: file.mimetype,
-    size: file.size,
-    url,
-    path: destPath,
-    type,
-  });
+    return model.create({
+      id: randomUUID(),
+      user_id: userId,
+      original_name: file.originalname,
+      mime_type: file.mimetype,
+      size: file.size,
+      url: downloadUrl,
+      path: filename,
+      type,
+      file_id: fileId,
+    });
+  } finally {
+    fs.unlink(file.path, () => {});
+  }
 }
 
 async function deleteFile(userId, id) {
   const file = await model.remove(id);
   if (!file) throw Object.assign(new Error('File not found'), { status: 404 });
   if (file.user_id !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
-  if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  if (file.file_id) {
+    await b2.deleteFile(file.path, file.file_id).catch(() => {});
+  }
   return { message: 'File deleted' };
 }
 

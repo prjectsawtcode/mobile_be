@@ -26,8 +26,8 @@ async function updateFcmToken(userId, { fcm_token }) {
 }
 
 async function createReminder(userId, { type, title, body, data }) {
-  const { v4: uuidv4 } = require('uuid');
-  const id = uuidv4();
+  const { randomUUID } = require('crypto');
+  const id = randomUUID();
   await model.create({ id, user_id: userId, title, body, type, data });
   return { message: 'Reminder created' };
 }

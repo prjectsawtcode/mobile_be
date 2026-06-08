@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./community.model');
 
 async function listPosts(query) {
@@ -6,7 +6,7 @@ async function listPosts(query) {
 }
 
 async function createPost(userId, { content, image_url }) {
-  return model.createPost({ id: uuidv4(), author_id: userId, content, image_url });
+  return model.createPost({ id: randomUUID(), author_id: userId, content, image_url });
 }
 
 async function deletePost(userId, postId) {
@@ -39,7 +39,7 @@ async function createComment(userId, postId, { content }) {
     'SELECT id FROM community_posts WHERE id = ?', [postId]
   );
   if (!posts[0]) throw Object.assign(new Error('Post not found'), { status: 404 });
-  return model.createComment({ id: uuidv4(), post_id: postId, author_id: userId, content });
+  return model.createComment({ id: randomUUID(), post_id: postId, author_id: userId, content });
 }
 
 async function deleteComment(userId, commentId) {

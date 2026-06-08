@@ -1,9 +1,9 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const { delPattern } = require('../../config/cache');
 const model = require('./chat.model');
 
 async function createRoom(userId, { scholar_id, language }) {
-  const room = await model.createRoom({ id: uuidv4(), user_id: userId, scholar_id, language });
+  const room = await model.createRoom({ id: randomUUID(), user_id: userId, scholar_id, language });
   await delPattern(`rooms:user:${userId}`);
   return room;
 }
@@ -23,7 +23,7 @@ async function sendMessage(userId, roomId, data) {
   const room = await model.findRoomById(roomId);
   if (!room) throw Object.assign(new Error('Room not found'), { status: 404 });
   const msg = await model.createMessage({
-    id: uuidv4(), room_id: roomId, sender_id: userId,
+    id: randomUUID(), room_id: roomId, sender_id: userId,
     sender_type: 'user', ...data,
   });
   return msg;

@@ -1,9 +1,9 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./payment.model');
 const notificationModel = require('../notification/notification.model');
 
 async function createRequest(data, userId) {
-  const id = uuidv4();
+  const id = randomUUID();
   return model.createRequest({ id, ...data, user_id: userId });
 }
 
@@ -33,7 +33,7 @@ async function updateStatus(id, status, adminId, remark) {
   const updated = await model.updateRequestStatus(id, status, adminId, remark);
 
   if (req.user_id) {
-    const notifId = uuidv4();
+    const notifId = randomUUID();
     const title = status === 'approved' ? 'Payment Approved' : 'Payment Rejected';
     const body = status === 'approved'
       ? `Your ${req.payment_type} payment of Rs.${req.amount} has been approved.`

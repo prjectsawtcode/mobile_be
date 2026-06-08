@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const multer = require('multer');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const { authenticate, authorize } = require('../../middleware/auth');
 const validate = require('../../middleware/validate');
 const controller = require('./user.controller');
@@ -11,7 +11,7 @@ const avatarStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/'),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `avatar-${uuidv4()}${ext}`);
+    cb(null, `avatar-${randomUUID()}${ext}`);
   },
 });
 

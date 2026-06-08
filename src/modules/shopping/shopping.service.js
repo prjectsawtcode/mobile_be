@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./shopping.model');
 
 async function list(query) {
@@ -19,7 +19,7 @@ async function getById(id) {
 
 async function create(providerId, data) {
   return model.create({
-    id: uuidv4(),
+    id: randomUUID(),
     provider_id: providerId,
     ...data,
   });

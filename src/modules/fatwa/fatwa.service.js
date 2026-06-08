@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const model = require('./fatwa.model');
 
 async function list(query) {
@@ -17,7 +17,7 @@ async function getById(id) {
 }
 
 async function create(scholarId, data) {
-  const fatwa = await model.create({ id: uuidv4(), scholar_id: scholarId, ...data });
+  const fatwa = await model.create({ id: randomUUID(), scholar_id: scholarId, ...data });
   return fatwa;
 }
 
