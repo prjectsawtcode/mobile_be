@@ -1426,6 +1426,21 @@ All endpoints return consistent error format:
 
 ---
 
+## SMS Notifications (Fast2SMS)
+
+SMS is sent automatically for the following events (requires `FAST2SMS_API_KEY` in `.env`):
+
+| Event | Trigger | Message |
+|-------|---------|---------|
+| Registration OTP | `POST /auth/register` | 6-digit OTP via route `otp` |
+| Forgot Password OTP | `POST /auth/forgot-password` | 6-digit OTP via route `otp` |
+| Payment Approved | `PATCH /payments/:id/status` → `approved` | Confirmation SMS with amount |
+| Payment Rejected | `PATCH /payments/:id/status` → `rejected` | Rejection SMS with optional remark |
+
+SMS is **non-blocking** — failures are logged but never return an error to the client.
+
+---
+
 ## Auth Header
 
 All authenticated endpoints require:

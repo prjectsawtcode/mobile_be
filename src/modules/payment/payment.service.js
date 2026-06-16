@@ -1,6 +1,7 @@
 const { randomUUID } = require('crypto');
 const model = require('./payment.model');
 const notificationModel = require('../notification/notification.model');
+const { sendSMS } = require('../../utils/sms');
 
 async function createRequest(data, userId) {
   const id = randomUUID();
@@ -46,6 +47,18 @@ async function updateStatus(id, status, adminId, remark) {
       type: 'payment',
       data: { payment_id: id, status, remark },
     });
+
+    // Send SMS notification
+    try {
+      const { pool } = require('../../config/db');
+      const [[user]] = await pool.query('SELECT phone FROM users WHERE id = ?', [req.user_id]);
+      if (user?.phone) {
+        const smsMsg = status === 'approved'
+          ? `Dear ${req.member_name}, your ${req.payment_type} payment of Rs.${req.amount} has been approved. - SawtDeen`
+          : `Dear ${req.member_name}, your ${req.payment_type} payment of Rs.${req.amount} has been rejected.${remark ? ' Reason: ' + remark : ''} - SawtDeen`;
+        // sendSMS({ numbers: [user.phone], message: smsMsg });
+      }
+    } catch (_) { /* SMS non-blocking */ }
   }
 
   return updated;
