@@ -137,4 +137,22 @@ async function resetPassword({ phone, otp, password }) {
   return { message: 'Password reset successfully' };
 }
 
-module.exports = { register, verifyOtp, login, refresh, logout, forgotPassword, resetPassword };
+// Resend OTP — generates new OTP for registration or password reset
+async function resendOtp({ phone, type }) {
+  if (type === 'reset') {
+    const user = await model.findByPhone(phone);
+    if (!user) return { message: 'OTP sent' };
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    await cacheSet(`otp:reset:${phone}`, otp, 300);
+    sendOtp(phone, otp);
+    return { message: 'OTP resent for password reset' };
+  }
+
+  // Default: registration OTP resend (no user check — just overwrite)
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  await cacheSet(`otp:${phone}`, otp, 300);
+  sendOtp(phone, otp);
+  return { message: 'OTP resent successfully' };
+}
+
+module.exports = { register, verifyOtp, login, refresh, logout, forgotPassword, resetPassword, resendOtp };

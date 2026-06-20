@@ -13,5 +13,6 @@ router.post('/refresh', validate(schema.refresh), controller.refresh);
 router.post('/logout', authenticate, controller.logout);
 router.post('/forgot-password', validate(schema.forgotPassword), controller.forgotPassword);
 router.post('/reset-password', validate(schema.resetPassword), controller.resetPassword);
+router.post('/resend-otp', controller.resendOtp);
 
 module.exports = router;

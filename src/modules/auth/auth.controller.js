@@ -60,3 +60,11 @@ exports.resetPassword = async (req, res, next) => {
     res.json(result);
   } catch (e) { next(e); }
 };
+
+// Resend OTP — generates new OTP, stores in Redis, sends SMS
+exports.resendOtp = async (req, res, next) => {
+  try {
+    const result = await service.resendOtp(req.body);
+    res.json(result);
+  } catch (e) { next(e); }
+};
