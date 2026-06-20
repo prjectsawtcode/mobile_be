@@ -32,7 +32,7 @@ async function register({ phone, password, name, email, gender }) {
 
   const otp = process.env.NODE_ENV === 'development' ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:${phone}`, otp, 300);
-  sendOtp(phone, otp);
+  await sendOtp(phone, otp);
   return { message: 'Registration successful. Verify OTP.', user_id: id };
 }
 
@@ -123,7 +123,7 @@ async function forgotPassword({ phone }) {
 
   const otp = process.env.NODE_ENV === 'development' ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:reset:${phone}`, otp, 300);
-  sendOtp(phone, otp);
+  await sendOtp(phone, otp);
   return { message: 'OTP sent for password reset' };
 }
 
@@ -144,14 +144,14 @@ async function resendOtp({ phone, type }) {
     if (!user) return { message: 'OTP sent' };
     const otp = String(Math.floor(100000 + Math.random() * 900000));
     await cacheSet(`otp:reset:${phone}`, otp, 300);
-    sendOtp(phone, otp);
+    await sendOtp(phone, otp);
     return { message: 'OTP resent for password reset' };
   }
 
   // Default: registration OTP resend (no user check — just overwrite)
   const otp = String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:${phone}`, otp, 300);
-  sendOtp(phone, otp);
+  await sendOtp(phone, otp);
   return { message: 'OTP resent successfully' };
 }
 
