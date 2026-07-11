@@ -2,7 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
 const { get: cacheGet, set: cacheSet, del: cacheDel } = require('../../config/cache');
-const { sendOtp, getDevOtp } = require('../../utils/sms');
+const { sendOtp, getDevOtp, shouldBypass } = require('../../utils/sms');
 const model = require('./auth.model');
 
 // Create a short-lived JWT (15 min) containing user id, phone, and role
@@ -30,7 +30,7 @@ async function register({ phone, password, name, email, gender }) {
     throw err;
   }
 
-  const otp = process.env.NODE_ENV === 'development' ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
+  const otp = shouldBypass() ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:${phone}`, otp, 300);
   await sendOtp(phone, otp);
   return { message: 'Registration successful. Verify OTP.', user_id: id };
@@ -121,7 +121,7 @@ async function forgotPassword({ phone }) {
   const user = await model.findByPhone(phone);
   if (!user) return { message: 'OTP sent for password reset' };
 
-  const otp = process.env.NODE_ENV === 'development' ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
+  const otp = shouldBypass() ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:reset:${phone}`, otp, 300);
   await sendOtp(phone, otp);
   return { message: 'OTP sent for password reset' };
@@ -142,14 +142,14 @@ async function resendOtp({ phone, type }) {
   if (type === 'reset') {
     const user = await model.findByPhone(phone);
     if (!user) return { message: 'OTP sent' };
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otp = shouldBypass() ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
     await cacheSet(`otp:reset:${phone}`, otp, 300);
     await sendOtp(phone, otp);
     return { message: 'OTP resent for password reset' };
   }
 
   // Default: registration OTP resend (no user check — just overwrite)
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otp = shouldBypass() ? getDevOtp() : String(Math.floor(100000 + Math.random() * 900000));
   await cacheSet(`otp:${phone}`, otp, 300);
   await sendOtp(phone, otp);
   return { message: 'OTP resent successfully' };

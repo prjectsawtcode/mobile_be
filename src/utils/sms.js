@@ -7,10 +7,26 @@ const ENTITY_ID = process.env.FAST2SMS_ENTITY_ID;
 const TEMPLATE_ID = process.env.FAST2SMS_TEMPLATE_ID;
 const DEV_OTP = '1111';
 
+function shouldBypass() {
+  const isDev = process.env.NODE_ENV === 'development';
+  const bypassConfig = process.env.BYPASS_SMS;
+  if (bypassConfig === 'true') {
+    return true;
+  }
+  if (bypassConfig === 'false') {
+    return false;
+  }
+  return isDev;
+}
+
 async function sendOtp(phone, otp) {
-  if (process.env.NODE_ENV === 'development') {
-    console.log(`[DEV OTP] ${otp} for ${phone}`);
-    return null;
+  if (shouldBypass()) {
+    const finalOtp = otp || DEV_OTP;
+    console.log(`[BYPASS OTP] ${finalOtp} for ${phone}`);
+    return {
+      return: true,
+      message: 'SMS sent successfully (bypassed)'
+    };
   }
 
   if (!FAST2SMS_API_KEY) {
@@ -51,4 +67,4 @@ function getDevOtp() {
   return DEV_OTP;
 }
 
-module.exports = { sendOtp, getDevOtp };
+module.exports = { sendOtp, getDevOtp, shouldBypass };
