@@ -27,8 +27,17 @@ async function getMe(userId) {
 }
 
 async function updateMe(userId, data) {
-  const { name, bio, city, state, address, date_of_birth, mosque_affiliation } = data;
-  if (name) await pool.query('UPDATE users SET name = ? WHERE id = ?', [name, userId]);
+  const { name, email, bio, city, state, address, date_of_birth, mosque_affiliation, avatar_url } = data;
+  
+  const userUpdates = [];
+  const userParams = [];
+  if (name) { userUpdates.push('name = ?'); userParams.push(name); }
+  if (email !== undefined) { userUpdates.push('email = ?'); userParams.push(email); }
+  if (userUpdates.length) {
+    userParams.push(userId);
+    await pool.query(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ?`, userParams);
+  }
+
   const profileData = {};
   if (bio !== undefined) profileData.bio = bio;
   if (city !== undefined) profileData.city = city;
@@ -36,9 +45,12 @@ async function updateMe(userId, data) {
   if (address !== undefined) profileData.address = address;
   if (date_of_birth !== undefined) profileData.date_of_birth = date_of_birth;
   if (mosque_affiliation !== undefined) profileData.mosque_affiliation = mosque_affiliation;
+  if (avatar_url !== undefined) profileData.avatar_url = avatar_url;
+
   if (Object.keys(profileData).length) await model.upsert(userId, profileData);
   return getMe(userId);
 }
+
 
 async function updateAvatar(userId, file) {
   if (!file) throw Object.assign(new Error('No file uploaded'), { status: 400 });

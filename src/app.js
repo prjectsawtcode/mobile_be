@@ -17,6 +17,9 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/v1/auth', require('./modules/auth/auth.routes'));
 app.use('/api/v1/users', require('./modules/user/user.routes'));
+app.use('/api/v1/user', require('./modules/user/user.routes'));
+
+
 app.use('/api/v1/announcements', require('./modules/announcement/announcement.routes'));
 app.use('/api/v1/scholars', require('./modules/scholar/scholar.routes'));
 app.use('/api/v1/chat', require('./modules/chat/chat.routes'));
