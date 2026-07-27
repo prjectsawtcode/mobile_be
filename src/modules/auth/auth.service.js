@@ -156,4 +156,12 @@ async function resendOtp({ phone, type }) {
   return { message: 'OTP resent successfully' };
 }
 
-module.exports = { register, verifyOtp, login, refresh, logout, forgotPassword, resetPassword, resendOtp };
+async function deleteAccount(userId) {
+  const userModel = require('../user/user.model');
+  await model.deleteUserRefreshTokens(userId);
+  await userModel.deleteUser(userId);
+  return { message: 'Account deleted successfully' };
+}
+
+module.exports = { register, verifyOtp, login, refresh, logout, forgotPassword, resetPassword, resendOtp, deleteAccount };
+

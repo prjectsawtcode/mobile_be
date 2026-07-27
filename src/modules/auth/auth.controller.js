@@ -70,3 +70,12 @@ exports.resendOtp = async (req, res, next) => {
     res.json(result);
   } catch (e) { next(e); }
 };
+
+// Delete Account — permanently deletes user record and stored refresh tokens
+exports.deleteAccount = async (req, res, next) => {
+  try {
+    const result = await service.deleteAccount(req.user.id);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+

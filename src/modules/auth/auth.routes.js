@@ -13,7 +13,11 @@ router.post('/refresh', validate(schema.refresh), controller.refresh);
 router.post('/refresh-token', validate(schema.refresh), controller.refresh);
 
 router.post('/logout', authenticate, controller.logout);
+router.post('/delete-account', authenticate, controller.deleteAccount);
+router.delete('/delete-account', authenticate, controller.deleteAccount);
+router.delete('/me', authenticate, controller.deleteAccount);
 router.post('/forgot-password', validate(schema.forgotPassword), controller.forgotPassword);
+
 router.post('/reset-password', validate(schema.resetPassword), controller.resetPassword);
 router.post('/resend-otp', controller.resendOtp);
 

@@ -66,4 +66,9 @@ async function updateRole(userId, role) {
   await pool.query('UPDATE users SET role = ? WHERE id = ?', [role, userId]);
 }
 
-module.exports = { init, findById, upsert, updateAvatar, findAll, updateRole };
+async function deleteUser(userId) {
+  await pool.query('DELETE FROM users WHERE id = ?', [userId]);
+}
+
+module.exports = { init, findById, upsert, updateAvatar, findAll, updateRole, deleteUser };
+
