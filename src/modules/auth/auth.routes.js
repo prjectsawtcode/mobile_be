@@ -10,6 +10,8 @@ router.post('/register', validate(schema.register), controller.register);
 router.post('/verify-otp', controller.verifyOtp);
 router.post('/login', validate(schema.login), controller.login);
 router.post('/refresh', validate(schema.refresh), controller.refresh);
+router.post('/refresh-token', validate(schema.refresh), controller.refresh);
+
 router.post('/logout', authenticate, controller.logout);
 router.post('/forgot-password', validate(schema.forgotPassword), controller.forgotPassword);
 router.post('/reset-password', validate(schema.resetPassword), controller.resetPassword);

@@ -32,10 +32,12 @@ exports.login = async (req, res, next) => {
 // Refresh token — validates existing refresh token, issues new JWT pair
 exports.refresh = async (req, res, next) => {
   try {
-    const result = await service.refresh(req.body.refresh_token);
+    const token = req.body.refresh_token || req.body.refreshToken;
+    const result = await service.refresh(token);
     res.json(result);
   } catch (e) { next(e); }
 };
+
 
 // Logout — deletes all refresh tokens for the authenticated user
 exports.logout = async (req, res, next) => {

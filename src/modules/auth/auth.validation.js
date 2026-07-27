@@ -22,8 +22,10 @@ exports.login = Joi.object({
 });
 
 exports.refresh = Joi.object({
-  refresh_token: Joi.string().uuid().required(),
-});
+  refresh_token: Joi.string().uuid().optional(),
+  refreshToken: Joi.string().uuid().optional(),
+}).unknown(true);
+
 
 exports.forgotPassword = Joi.object({
   phone: Joi.string().pattern(/^[6-9]\d{9}$/).required(),

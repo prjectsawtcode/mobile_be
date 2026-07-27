@@ -6,11 +6,13 @@ const schema = require('./shopping.validation');
 
 const router = Router();
 
-router.get('/', authenticate, controller.list);
+router.get('/', controller.list);
 router.get('/my', authenticate, controller.listMy);
-router.get('/:id', authenticate, controller.getById);
-router.post('/', authenticate, authorize('admin', 'subscriber'), validate(schema.create), controller.create);
-router.patch('/:id', authenticate, authorize('admin', 'subscriber'), validate(schema.update), controller.update);
-router.delete('/:id', authenticate, authorize('admin', 'subscriber'), controller.remove);
+router.get('/:id', controller.getById);
+
+router.post('/', authenticate, authorize('admin', 'subscriber', 'vendor'), validate(schema.create), controller.create);
+router.patch('/:id', authenticate, authorize('admin', 'subscriber', 'vendor'), validate(schema.update), controller.update);
+router.delete('/:id', authenticate, authorize('admin', 'subscriber', 'vendor'), controller.remove);
+
 
 module.exports = router;

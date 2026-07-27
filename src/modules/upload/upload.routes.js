@@ -28,9 +28,10 @@ const upload = multer({
 
 const router = Router();
 
-router.post('/image', authenticate, upload.single('file'), controller.uploadImage);
-router.post('/voice', authenticate, upload.single('file'), controller.uploadVoice);
-router.post('/document', authenticate, upload.single('file'), controller.uploadDocument);
+router.post('/image', upload.single('file'), controller.uploadImage);
+router.post('/voice', upload.single('file'), controller.uploadVoice);
+router.post('/document', upload.single('file'), controller.uploadDocument);
 router.delete('/:id', authenticate, controller.delete);
+
 
 module.exports = router;

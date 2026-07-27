@@ -62,13 +62,20 @@ async function findById(id) {
 }
 
 async function create(data) {
-  const { id, author_id, title, content, image_url, voice_url, category, privacy, start_date, end_date } = data;
+  const { id, author_id, title, content, image_url, imageUrl, voice_url, voiceUrl, category, privacy, start_date, end_date } = data;
+  const p = (privacy === 'PUBLIC' || privacy === 'public' || privacy === 'EVERYONE' || privacy === 'everyone') ? 'everyone' : 'masjid';
+  const img = image_url || imageUrl || null;
+  const voice = voice_url || voiceUrl || null;
+  const sDate = start_date ? new Date(start_date) : new Date();
+  const eDate = end_date ? new Date(end_date) : null;
+
   await pool.query(
     'INSERT INTO announcements (id, author_id, title, content, image_url, voice_url, category, privacy, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, author_id, title, content, image_url, voice_url, category, privacy, start_date, end_date]
+    [id, author_id, title, content, img, voice, category, p, sDate, eDate]
   );
   return findById(id);
 }
+
 
 async function update(id, data) {
   const keys = Object.keys(data);

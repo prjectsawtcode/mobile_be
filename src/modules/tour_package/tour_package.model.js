@@ -56,13 +56,20 @@ async function findByProvider(providerId) {
 }
 
 async function create(data) {
+  const providerName = data.provider_name || 'Vendor';
+  const whatsapp = data.contact_whatsapp || data.whatsapp_phone || '919876543210';
+  const imgUrl = data.image_url || data.imageUrl || null;
+  const slots = data.total_slots || data.slots || 10;
+  const priceVal = data.price || 0;
+
   await pool.query(
     `INSERT INTO tour_packages (id, provider_id, provider_name, title, description, price, duration, category, contact_whatsapp, website, image_url, logo_url, about, total_slots, booked_slots, start_date, end_date)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [data.id, data.provider_id, data.provider_name, data.title, data.description, data.price, data.duration, data.category, data.contact_whatsapp, data.website, data.image_url, data.logo_url, data.about, data.total_slots, data.booked_slots, data.start_date, data.end_date]
+    [data.id, data.provider_id, providerName, data.title, data.description || '', priceVal, data.duration || '14 Days', data.category || 'UMRAH', whatsapp, data.website || '', imgUrl, data.logo_url || null, data.about || '', slots, data.booked_slots || 0, data.start_date || null, data.end_date || null]
   );
   return findById(data.id);
 }
+
 
 async function update(id, data) {
   const keys = Object.keys(data);

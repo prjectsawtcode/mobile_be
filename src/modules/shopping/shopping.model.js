@@ -50,13 +50,19 @@ async function findByProvider(providerId) {
 }
 
 async function create(data) {
+  const prodName = data.name || data.title || 'Product';
+  const whatsapp = data.whatsapp_number || data.whatsapp_phone || '919876543210';
+  const providerName = data.provider_name || 'Vendor';
+  const imgUrl = data.image_url || data.imageUrl || null;
+
   await pool.query(
     `INSERT INTO shopping_products (id, provider_id, name, description, price, category, provider_name, whatsapp_number, logo_url, image_url, about)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [data.id, data.provider_id, data.name, data.description, data.price, data.category, data.provider_name, data.whatsapp_number, data.logo_url, data.image_url, data.about]
+    [data.id, data.provider_id, prodName, data.description || '', data.price || 0, data.category || 'GENERAL', providerName, whatsapp, data.logo_url || null, imgUrl, data.about || '']
   );
   return findById(data.id);
 }
+
 
 async function update(id, data) {
   const keys = Object.keys(data);

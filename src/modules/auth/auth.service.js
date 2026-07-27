@@ -10,9 +10,10 @@ function generateAccessToken(user) {
   return jwt.sign(
     { id: user.id, phone: user.phone, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '5d' }
   );
 }
+
 
 // Register: check duplicate, hash password, create user in DB, store OTP in Redis
 async function register({ phone, password, name, email, gender }) {
