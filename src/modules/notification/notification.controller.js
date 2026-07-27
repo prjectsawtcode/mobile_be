@@ -23,3 +23,16 @@ exports.updateFcmToken = async (req, res, next) => {
 exports.createReminder = async (req, res, next) => {
   try { res.json(await service.createReminder(req.user.id, req.body)); } catch (e) { next(e); }
 };
+
+exports.sendAnnouncement = async (req, res, next) => {
+  try { res.json(await service.sendAnnouncementNotification(req.body)); } catch (e) { next(e); }
+};
+
+exports.sendPrayerAlert = async (req, res, next) => {
+  try { res.json(await service.sendPrayerAlertNotification(req.body)); } catch (e) { next(e); }
+};
+
+exports.sendBillPayment = async (req, res, next) => {
+  try { res.json(await service.sendBillPaymentNotification(req.body)); } catch (e) { next(e); }
+};
+
