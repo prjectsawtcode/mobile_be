@@ -17,13 +17,13 @@ const createPreferencesTable = `
 const createCacheTable = `
   CREATE TABLE IF NOT EXISTS prayer_cache (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    prayer_date DATE NOT NULL,
+    date DATE NOT NULL,
     lat DECIMAL(10,7) NOT NULL,
     lng DECIMAL(10,7) NOT NULL,
     method INT NOT NULL,
     data JSON NOT NULL,
     cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY (prayer_date, lat, lng, method)
+    UNIQUE KEY (date, lat, lng, method)
   )`;
 
 async function init() {
@@ -49,15 +49,20 @@ async function upsertPreferences(userId, data) {
 
 async function getCachedPrayerTimes(date, lat, lng, method) {
   const [rows] = await pool.query(
-    'SELECT data FROM prayer_cache WHERE prayer_date = ? AND lat = ? AND lng = ? AND method = ?',
+    'SELECT data FROM prayer_cache WHERE date = ? AND lat = ? AND lng = ? AND method = ?',
     [date, lat, lng, method]
   );
-  return rows[0] ? rows[0].data : null;
+  if (!rows[0]) return null;
+  let data = rows[0].data;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch (_) {}
+  }
+  return data;
 }
 
 async function cachePrayerTimes(date, lat, lng, method, data) {
   await pool.query(
-    'INSERT INTO prayer_cache (prayer_date, lat, lng, method, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data), cached_at = NOW()',
+    'INSERT INTO prayer_cache (date, lat, lng, method, data) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data), cached_at = NOW()',
     [date, lat, lng, method, JSON.stringify(data)]
   );
 }
