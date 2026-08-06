@@ -154,6 +154,107 @@ async function sendBillPaymentNotification({ userId, user_id, amount, bill_title
   };
 }
 
+
+/**
+ * Fans a freshly published announcement out to its audience.
+ *
+ * Audience follows the announcement's own scope:
+ *   privacy = 'everyone' → every member
+ *   privacy = 'masjid'   → members sharing the author's mosque_affiliation,
+ *                          the author included
+ *
+ * Announcements carry no masjid column, so "that masjid" is resolved from the
+ * author — a committee member posts for the jamaath they belong to. If the
+ * author has no affiliation the masjid cannot be identified, so the fan-out is
+ * limited to the author rather than guessing and notifying the wrong jamaath.
+ *
+ * Never throws: a delivery problem must not fail the publish that already
+ * succeeded.
+ */
+async function notifyAnnouncement(authorId, announcement) {
+  try {
+    const scope = String(announcement.privacy || 'everyone').toLowerCase();
+    const isMasjidScoped = scope === 'masjid';
+
+    let audience;
+    let masjid = null;
+
+    if (!isMasjidScoped) {
+      const [rows] = await pool.query('SELECT id, fcm_token FROM users');
+      audience = rows;
+    } else {
+      const [[profile]] = await pool.query(
+        'SELECT mosque_affiliation FROM user_profiles WHERE user_id = ?',
+        [authorId]
+      );
+      masjid = profile?.mosque_affiliation || null;
+
+      if (!masjid) {
+        console.warn(
+          `[announcement ${announcement.id}] author has no mosque_affiliation; ` +
+          'masjid-scoped post limited to the author.'
+        );
+        const [rows] = await pool.query(
+          'SELECT id, fcm_token FROM users WHERE id = ?', [authorId]
+        );
+        audience = rows;
+      } else {
+        // TRIM both sides: affiliation is a free-text name, and a stray space
+        // would silently drop members from their own jamaath.
+        const [rows] = await pool.query(
+          `SELECT u.id, u.fcm_token
+             FROM users u
+             JOIN user_profiles p ON p.user_id = u.id
+            WHERE TRIM(LOWER(p.mosque_affiliation)) = TRIM(LOWER(?))
+               OR u.id = ?`,
+          [masjid, authorId]
+        );
+        audience = rows;
+      }
+    }
+
+    if (!audience.length) return { recipients: 0, devices: 0, push: null };
+
+    const title = announcement.title || 'New Jamaath Announcement';
+    const body = announcement.content || '';
+    const data = {
+      type: 'announcement',
+      announcement_id: announcement.id,
+      category: announcement.category || 'general',
+    };
+
+    await model.createMany(
+      audience.map((u) => ({
+        id: randomUUID(),
+        user_id: u.id,
+        title,
+        body,
+        type: 'announcement',
+        data,
+      }))
+    );
+
+    const tokens = audience.map((u) => u.fcm_token).filter(Boolean);
+    const result = await push.sendToTokens(tokens, {
+      title,
+      body,
+      data,
+      url: '/announcements',
+    });
+
+    console.log(
+      `[announcement ${announcement.id}] scope=${scope}` +
+      (masjid ? ` masjid="${masjid}"` : '') +
+      ` recipients=${audience.length} devices=${tokens.length} sent=${result.sent}`
+    );
+
+    return { recipients: audience.length, devices: tokens.length, push: result };
+  } catch (e) {
+    console.error('[announcement] notify failed:', e.message);
+    return { recipients: 0, devices: 0, push: null, error: e.message };
+  }
+}
+
 module.exports = {
   list,
   markRead,
@@ -167,4 +268,5 @@ module.exports = {
   sendAnnouncementNotification,
   sendPrayerAlertNotification,
   sendBillPaymentNotification,
+  notifyAnnouncement,
 };
