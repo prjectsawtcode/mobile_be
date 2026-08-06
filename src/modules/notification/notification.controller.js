@@ -24,6 +24,10 @@ exports.createReminder = async (req, res, next) => {
   try { res.json(await service.createReminder(req.user.id, req.body)); } catch (e) { next(e); }
 };
 
+exports.sendBroadcast = async (req, res, next) => {
+  try { res.json(await service.sendBroadcastNotification(req.body)); } catch (e) { next(e); }
+};
+
 exports.sendAnnouncement = async (req, res, next) => {
   try { res.json(await service.sendAnnouncementNotification(req.body)); } catch (e) { next(e); }
 };
