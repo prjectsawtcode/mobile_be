@@ -6,7 +6,8 @@ module.exports = app;
 if (require.main === module) {
   const db = require('./db/init');
   const PORT = process.env.PORT || 3000;
-
+  console.log({env:process.env.NODE_ENV});
+  
   (async () => {
     try {
       await db.init();

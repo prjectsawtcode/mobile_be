@@ -15,6 +15,7 @@ const paymentModel = require('../modules/payment/payment.model');
 const tourPackageModel = require('../modules/tour_package/tour_package.model');
 const shoppingModel = require('../modules/shopping/shopping.model');
 const foodOrderModel = require('../modules/food_order/food_order.model');
+const certificateModel = require('../modules/certificate/certificate.model');
 
 async function init() {
   console.log('Initializing database tables...');
@@ -34,6 +35,7 @@ async function init() {
   await tourPackageModel.init();
   await shoppingModel.init();
   await foodOrderModel.init();
+  await certificateModel.init();
   console.log('All tables initialized.');
 }
 

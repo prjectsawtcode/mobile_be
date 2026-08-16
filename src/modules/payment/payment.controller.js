@@ -15,7 +15,7 @@ exports.getRequest = async (req, res, next) => {
 exports.updateStatus = async (req, res, next) => {
   try {
     const result = await service.updateStatus(
-      req.params.id, req.body.status, req.user.id, req.body.remark
+      req.params.id, req.body.status, req.user?.id, req.body.remark, req.body.jamath
     );
     res.json(result);
   } catch (e) { next(e); }
@@ -41,3 +41,43 @@ exports.uploadQr = async (req, res, next) => {
     res.json(result);
   } catch (e) { next(e); }
 };
+
+exports.verifyMember = async (req, res, next) => {
+  try {
+    const result = await service.verifyMember(req.body);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.sendOTP = async (req, res, next) => {
+  try {
+    const result = await service.sendOTP(req.body);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.verifyOTP = async (req, res, next) => {
+  try {
+    const result = await service.verifyOTP(req.body);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.submitPayment = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const result = await service.submitPayment(req.body, req.user, req.file, authHeader);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.notifyApproval = async (req, res, next) => {
+  try {
+    const result = await service.notifyApproval(req.body);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+
+
+

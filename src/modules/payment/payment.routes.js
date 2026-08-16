@@ -28,13 +28,21 @@ const upload = multer({
 
 const router = Router();
 
+router.post('/verify-member', validate(schema.verifyMember), controller.verifyMember);
+router.post('/send-otp', validate(schema.sendOTP), controller.sendOTP);
+router.post('/verify-otp', validate(schema.verifyOTP), controller.verifyOTP);
+router.post('/submit', authenticate, upload.single('screenshot'), controller.submitPayment);
 router.post('/create', authenticate, validate(schema.createRequest), controller.createRequest);
-router.get('/', authenticate, authorize('admin'), controller.listRequests);
+router.get('/submitted-requests', authenticate, controller.listRequests);
+router.get('/', authenticate, controller.listRequests);
 router.get('/member/:kathaNumber', authenticate, controller.getMemberRequests);
 router.get('/settings', controller.getSettings);
-router.get('/:id', authenticate, authorize('admin'), controller.getRequest);
-router.patch('/:id/status', authenticate, authorize('admin'), validate(schema.updateStatus), controller.updateStatus);
+router.get('/:id', authenticate, controller.getRequest);
+router.patch('/:id/status', authenticate, validate(schema.updateStatus), controller.updateStatus);
+router.post('/notify-approval', authenticate, controller.notifyApproval);
+router.post('/notifyapproval', authenticate, controller.notifyApproval);
 router.patch('/settings', authenticate, authorize('admin'), validate(schema.updateSettings), controller.updateSettings);
 router.post('/settings/qr', authenticate, authorize('admin'), upload.single('qr'), controller.uploadQr);
 
 module.exports = router;
+

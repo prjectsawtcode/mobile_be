@@ -20,56 +20,50 @@ async function uploadFile(userId, file, type) {
   const fileIdStr = randomUUID();
   const filename = `${type}/${fileIdStr}${ext}`;
 
-
   try {
-    let downloadUrl = '';
-    let b2FileId = null;
-
-    if (process.env.B2_KEY_ID && process.env.B2_APP_KEY) {
-      try {
-        const { fileId } = await b2.uploadFile(file.path, filename, file.mimetype);
-        downloadUrl = await b2.getDownloadUrl(filename);
-        b2FileId = fileId;
-      } catch (err) {
-        console.warn('B2 Upload failed, falling back to local file storage:', err.message);
-      }
+    let fileBuffer = null;
+    if (file.buffer) {
+      fileBuffer = file.buffer;
+    } else if (file.path && fs.existsSync(file.path)) {
+      fileBuffer = fs.readFileSync(file.path);
     }
 
-    if (!downloadUrl) {
-      const destDir = path.join(__dirname, '../../..', 'uploads', type);
-      if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-      const localDest = path.join(destDir, `${fileIdStr}${ext}`);
-      fs.copyFileSync(file.path, localDest);
-      const port = process.env.PORT || 4000;
-      downloadUrl = `http://localhost:${port}/uploads/${type}/${fileIdStr}${ext}`;
+    const mimeType = file.mimetype || 'application/octet-stream';
+    let fileData = null;
+    if (fileBuffer) {
+      fileData = `data:${mimeType};base64,${fileBuffer.toString('base64')}`;
     }
+
+    const port = process.env.PORT || 4000;
+    const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/+$/, '') : `http://localhost:${port}`;
+    const downloadUrl = `${baseUrl}/api/documents/${fileIdStr}`;
 
     return model.create({
       id: fileIdStr,
       user_id: validUserId,
       original_name: file.originalname,
-
-      mime_type: file.mimetype,
-      size: file.size,
+      mime_type: mimeType,
+      size: file.size || (fileBuffer ? fileBuffer.length : 0),
       url: downloadUrl,
       path: filename,
       type,
-      file_id: b2FileId,
+      file_id: fileIdStr,
+      file_data: fileData,
     });
   } finally {
-    fs.unlink(file.path, () => {});
+    if (file.path && fs.existsSync(file.path)) {
+      fs.unlink(file.path, () => {});
+    }
   }
 }
-
 
 async function deleteFile(userId, id) {
   const file = await model.remove(id);
   if (!file) throw Object.assign(new Error('File not found'), { status: 404 });
-  if (file.user_id !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
-  if (file.file_id) {
-    await b2.deleteFile(file.path, file.file_id).catch(() => {});
-  }
-  return { message: 'File deleted' };
+  if (file.user_id !== userId && userId !== 'admin') throw Object.assign(new Error('Forbidden'), { status: 403 });
+  await b2.deleteFile(file.path, file.file_id || id).catch(() => {});
+  return { message: 'File soft deleted successfully', id };
 }
 
 module.exports = { uploadFile, deleteFile };
+
