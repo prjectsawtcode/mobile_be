@@ -24,6 +24,21 @@ function getBalanceKey(type) {
   return `balance_${clean}`;
 }
 
+function stripWalletFields(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(stripWalletFields);
+  }
+  const walletKeyRegex = /^(wallet|wallet_.*|.*_wallet|walletAmount|walletBalance)$/i;
+  const result = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (!walletKeyRegex.test(k)) {
+      result[k] = (v && typeof v === 'object') ? stripWalletFields(v) : v;
+    }
+  }
+  return result;
+}
+
 async function getMemberBalanceDetails(query, user) {
   const kathaNumber = query.katha_number || user?.katha_number || user?.id;
   const jamath = query.jamath || user?.jamath || 'BSJM Thodar';
@@ -109,7 +124,8 @@ async function getMemberBalanceDetails(query, user) {
     console.warn('[MEMBER BALANCE DB DEDUCTION WARN] Failed to apply local approved payments deduction:', dbErr.message);
   }
 
-  return responseData;
+  // Strip wallet amount fields so they are never exposed/shown
+  return stripWalletFields(responseData);
 }
 
 module.exports = {

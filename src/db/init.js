@@ -16,6 +16,7 @@ const tourPackageModel = require('../modules/tour_package/tour_package.model');
 const shoppingModel = require('../modules/shopping/shopping.model');
 const foodOrderModel = require('../modules/food_order/food_order.model');
 const certificateModel = require('../modules/certificate/certificate.model');
+const documentModel = require('../modules/document/document.model');
 
 async function init() {
   console.log('Initializing database tables...');
