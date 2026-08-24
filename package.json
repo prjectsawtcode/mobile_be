@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node -e \"require('./src/db/init').seed().then(()=>process.exit(0))\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -26,6 +28,7 @@
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
     "mysql2": "^3.22.4",
+    "sharp": "^0.35.3",
     "uuid": "^14.0.0"
   },
   "devDependencies": {

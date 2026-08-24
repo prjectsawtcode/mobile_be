@@ -320,10 +320,209 @@ CREATE TABLE IF NOT EXISTS uploads (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- 13. Payment Requests, Masjid Settings & Verifications
 -- ============================================================
--- Seed: Default Subscription Plans
+CREATE TABLE IF NOT EXISTS payment_requests (
+  id CHAR(36) PRIMARY KEY,
+  katha_number VARCHAR(50) NOT NULL,
+  member_name VARCHAR(100) NOT NULL,
+  payment_type VARCHAR(100) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  month VARCHAR(20) NOT NULL,
+  upi_id VARCHAR(100) DEFAULT NULL,
+  screenshot_url TEXT DEFAULT NULL,
+  utr VARCHAR(100) DEFAULT NULL,
+  status ENUM('pending','approved','rejected') DEFAULT 'pending',
+  admin_remark TEXT DEFAULT NULL,
+  admin_id CHAR(36) DEFAULT NULL,
+  user_id CHAR(36) DEFAULT NULL,
+  mobile VARCHAR(20) DEFAULT NULL,
+  payment_mode VARCHAR(50) DEFAULT 'Cash',
+  remarks TEXT DEFAULT NULL,
+  category VARCHAR(100) DEFAULT NULL,
+  collection_id VARCHAR(100) DEFAULT NULL,
+  is_balance_payment BOOLEAN DEFAULT FALSE,
+  raw_data JSON DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_pr_katha (katha_number),
+  INDEX idx_pr_status (status),
+  INDEX idx_pr_user (user_id),
+  INDEX idx_pr_created (created_at)
+);
+
+CREATE TABLE IF NOT EXISTS masjid_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  masjid_name VARCHAR(200) NOT NULL DEFAULT 'BSJM Thodar',
+  qr_code_url TEXT DEFAULT NULL,
+  upi_id VARCHAR(100) DEFAULT NULL,
+  account_number VARCHAR(50) DEFAULT NULL,
+  ifsc_code VARCHAR(20) DEFAULT NULL,
+  bank_name VARCHAR(100) DEFAULT NULL,
+  account_holder VARCHAR(100) DEFAULT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payment_verifications (
+  id CHAR(36) PRIMARY KEY,
+  katha_number VARCHAR(50) NOT NULL,
+  mobile VARCHAR(20) NOT NULL,
+  otp_code VARCHAR(10) NOT NULL,
+  is_verified BOOLEAN DEFAULT FALSE,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_katha_mobile (katha_number, mobile)
+);
+
+-- 14. Shopping Products
+-- ============================================================
+CREATE TABLE IF NOT EXISTS shopping_products (
+  id CHAR(36) PRIMARY KEY,
+  provider_id CHAR(36) NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  description TEXT DEFAULT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  category VARCHAR(100) NOT NULL,
+  provider_name VARCHAR(200) NOT NULL,
+  whatsapp_number VARCHAR(20) NOT NULL,
+  logo_url TEXT DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  about TEXT DEFAULT NULL,
+  is_active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_shop_category (category, is_active),
+  INDEX idx_shop_active (is_active, created_at)
+);
+
+-- 15. Tour Packages
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tour_packages (
+  id CHAR(36) PRIMARY KEY,
+  provider_id CHAR(36) NOT NULL,
+  provider_name VARCHAR(200) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  description TEXT DEFAULT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  duration VARCHAR(50) DEFAULT '14 Days',
+  category VARCHAR(50) NOT NULL DEFAULT 'Umrah',
+  contact_whatsapp VARCHAR(20) DEFAULT NULL,
+  website VARCHAR(200) DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  logo_url TEXT DEFAULT NULL,
+  about TEXT DEFAULT NULL,
+  total_slots INT DEFAULT 0,
+  booked_slots INT DEFAULT 0,
+  start_date DATE DEFAULT NULL,
+  end_date DATE DEFAULT NULL,
+  is_active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_tours_cat_active (category, is_active),
+  INDEX idx_tours_active (is_active, created_at)
+);
+
+-- 16. Food Orders & Menu
+-- ============================================================
+CREATE TABLE IF NOT EXISTS food_categories (
+  id CHAR(36) PRIMARY KEY,
+  provider_id CHAR(36) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  description TEXT DEFAULT NULL,
+  logo_url TEXT DEFAULT NULL,
+  sort_order INT DEFAULT 0,
+  is_active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_food_cat_sort (provider_id, is_active, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS food_menu_items (
+  id CHAR(36) PRIMARY KEY,
+  category_id CHAR(36) NOT NULL,
+  provider_id CHAR(36) NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  description TEXT DEFAULT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  subcategory VARCHAR(100) DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  whatsapp_number VARCHAR(20) DEFAULT NULL,
+  is_available TINYINT(1) DEFAULT 1,
+  is_active TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES food_categories(id) ON DELETE CASCADE,
+  FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_food_item_cat (category_id, is_active, subcategory)
+);
+
+-- 17. Certificate Requests
+-- ============================================================
+CREATE TABLE IF NOT EXISTS certificate_requests (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  katha_number VARCHAR(50) NOT NULL,
+  applicant_name VARCHAR(200) NOT NULL,
+  mobile VARCHAR(20) NOT NULL DEFAULT '',
+  certificate_type VARCHAR(50) NOT NULL,
+  masjid_name VARCHAR(200) NOT NULL DEFAULT 'BSJM Thodar',
+  details JSON DEFAULT NULL,
+  photo_url LONGTEXT DEFAULT NULL,
+  document_url LONGTEXT DEFAULT NULL,
+  invitation_card_url LONGTEXT DEFAULT NULL,
+  payment_screenshot_url LONGTEXT DEFAULT NULL,
+  fee_amount DECIMAL(10,2) DEFAULT 0.00,
+  payment_status ENUM('pending_payment', 'pending_review', 'approved', 'rejected') DEFAULT 'pending_payment',
+  status VARCHAR(50) DEFAULT 'pending',
+  admin_remarks TEXT DEFAULT NULL,
+  approved_by VARCHAR(100) DEFAULT NULL,
+  approved_at TIMESTAMP NULL DEFAULT NULL,
+  user_id VARCHAR(100) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_katha (katha_number),
+  INDEX idx_status (payment_status),
+  INDEX idx_cert_type (certificate_type, created_at),
+  INDEX idx_cert_masjid (masjid_name, created_at)
+);
+
+-- 18. Uploaded Documents (Local DB & Base64 Storage)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS uploaded_documents (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  file_uuid VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(50) NOT NULL DEFAULT 'certificate',
+  entity_id VARCHAR(100) DEFAULT NULL,
+  category VARCHAR(50) NOT NULL DEFAULT 'documents',
+  masjid_name VARCHAR(100) DEFAULT 'BSJM Thodar',
+  original_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  original_size INT UNSIGNED DEFAULT 0,
+  compressed_size INT UNSIGNED DEFAULT 0,
+  b2_key VARCHAR(500) DEFAULT NULL,
+  file_url LONGTEXT DEFAULT NULL,
+  file_data LONGTEXT DEFAULT NULL,
+  is_deleted TINYINT(1) DEFAULT 0,
+  deleted_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_entity (entity_type, entity_id),
+  INDEX idx_uuid (file_uuid),
+  INDEX idx_deleted (is_deleted),
+  INDEX idx_doc_active_entity (entity_type, entity_id, is_deleted)
+);
+
+-- ============================================================
+-- Seed: Default Data
 -- ============================================================
 INSERT IGNORE INTO subscription_plans (id, name, label, type, price, chat_limit, duration_days) VALUES
 (1, 'single_chat', 'Single Chat', 'single_chat', 49.00, 1, NULL),
 (2, 'monthly', 'Monthly Plan', 'monthly', 199.00, NULL, 30),
 (3, 'yearly', 'Yearly Plan', 'yearly', 999.00, NULL, 365);
+
+INSERT IGNORE INTO masjid_settings (id, masjid_name, upi_id) VALUES
+(1, 'BSJM Thodar', 'merchant@upi');

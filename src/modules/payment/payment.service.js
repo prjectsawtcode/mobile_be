@@ -1,7 +1,18 @@
 const { randomUUID } = require('crypto');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const model = require('./payment.model');
 const notificationModel = require('../notification/notification.model');
-const { sendSMS } = require('../../utils/sms');
+const { sendSMS, sendSMSFast2SMS, shouldBypass, getDevOtp } = require('../../utils/sms');
+const axios = require('axios');
+const { getJamathBaseUrl } = require('../../config/jamaths');
+
+function maskMobile(m) {
+  if (!m) return '';
+  const str = String(m).replace(/\D/g, '');
+  if (str.length < 4) return str;
+  return '*'.repeat(Math.max(0, str.length - 4)) + str.slice(-4);
+}
 
 async function createRequest(data, userId) {
   const id = randomUUID();
@@ -25,13 +36,40 @@ async function getRequest(id) {
   return req;
 }
 
-async function updateStatus(id, status, adminId, remark) {
+async function updateStatus(id, status, adminId, remark, jamath) {
   const req = await model.findRequestById(id);
   if (!req) throw Object.assign(new Error('Payment request not found'), { status: 404 });
-  if (req.status !== 'pending') {
-    throw Object.assign(new Error('Only pending requests can be updated'), { status: 400 });
-  }
+  
   const updated = await model.updateRequestStatus(id, status, adminId, remark);
+
+  // Sync approval status to source Jamath database if configured
+  const rawData = typeof req.raw_data === 'string' ? JSON.parse(req.raw_data || '{}') : (req.raw_data || {});
+  const targetJamath = jamath || rawData.jamath || rawData.masjid_name || 'BSJM Thodar';
+  const baseUrl = getJamathBaseUrl(targetJamath);
+  if (baseUrl) {
+    const externalUrl = `${baseUrl.replace(/\/+$/, '')}/api/payment/update-status`;
+    try {
+      await axiosPostWithRetry(externalUrl, {
+        payment_id: id,
+        katha_number: req.katha_number,
+        khata_no: req.katha_number,
+        khataNo: req.katha_number,
+        status,
+        remark,
+        amount: req.amount,
+        collection_type: req.payment_type,
+        collectionType: req.payment_type,
+        month: req.month,
+        year: rawData.year || undefined,
+        is_balance_payment: req.is_balance_payment,
+        payment_mode: req.payment_mode,
+        mobile: req.mobile,
+        jamath: targetJamath,
+      }, { timeout: 30000 }).catch((err) => {
+        console.warn(`[EXTERNAL STATUS SYNC WARN] Update status call to ${externalUrl} notice:`, err.message);
+      });
+    } catch (_) {}
+  }
 
   if (req.user_id) {
     const notifId = randomUUID();
@@ -76,6 +114,511 @@ async function updateSettings(data) {
   return model.updateSettings(data);
 }
 
+async function axiosPostWithRetry(url, data, config, retries = 1) {
+  try {
+    return await axios.post(url, data, config);
+  } catch (err) {
+    if (retries > 0 && (!err.response || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT')) {
+      console.warn(`[EXTERNAL API RETRY] Call to ${url} failed (${err.message}). Retrying in 1.5s for cold-start server...`);
+      await new Promise(res => setTimeout(res, 1500));
+      return await axios.post(url, data, config);
+    }
+    throw err;
+  }
+}
+
+async function verifyMember(data) {
+  const memberNumber = data.member_number || data.katha_number;
+  const mobile = data.mobile;
+  const jamath = data.jamath || data.masjid_name || data.jamath_name || 'BSJM Thodar';
+
+  if (!memberNumber) {
+    throw Object.assign(new Error('Member number (or katha_number) is required'), { status: 400 });
+  }
+
+  if (!mobile) {
+    throw Object.assign(new Error('Mobile number is required'), { status: 400 });
+  }
+
+  const baseUrl = getJamathBaseUrl(jamath);
+  if (!baseUrl) {
+    throw Object.assign(new Error(`No external API configured for jamath: ${jamath}`), { status: 400 });
+  }
+
+  const externalUrl = `${baseUrl.replace(/\/+$/, '')}/api/payment/verify-member`;
+  console.log(" verifyMember | externalUrl | ",externalUrl);
+  
+
+  try {
+    const response = await axiosPostWithRetry(
+      externalUrl,
+      {
+        katha_number: String(memberNumber),
+        mobile: String(mobile),
+        jamath: String(jamath),
+        masjid_name: String(jamath),
+        jamath_name: String(jamath),
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, */*',
+        },
+        timeout: 30000,
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error(`[VERIFY MEMBER ERROR] Failed to verify with external Jamath API at ${externalUrl}:`, error.message);
+    if (error.response) {
+      const errData = error.response.data;
+      const msg = typeof errData?.error === 'string'
+        ? errData.error
+        : (errData?.error?.message || errData?.message || 'External member verification failed');
+      throw Object.assign(
+        new Error(msg),
+        { status: error.response.status, data: typeof errData === 'object' ? errData : { error: msg } }
+      );
+    } else if (error.request) {
+      throw Object.assign(new Error('External jamath service did not respond (timeout or server starting)'), { status: 502 });
+    } else {
+      throw Object.assign(new Error(error.message || 'Error verifying member externally'), { status: 500 });
+    }
+  }
+}
+
+async function sendOTP(data) {
+  const katha_number = String(data.katha_number || data.member_number || '').trim();
+  const rawMobile = String(data.mobile || '').trim();
+  const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
+
+  if (!katha_number || !cleanMobile || cleanMobile.length !== 10) {
+    throw Object.assign(new Error('Valid katha_number and 10-digit mobile number are required'), { status: 400 });
+  }
+
+  // Security Rate Limiting: Avoid continuous hits & malicious calls (60 second cooldown)
+  const lastTime = await model.getLastOtpTime(katha_number, cleanMobile);
+  if (lastTime) {
+    const elapsedSeconds = (Date.now() - new Date(lastTime).getTime()) / 1000;
+    if (elapsedSeconds < 60) {
+      const waitTime = Math.ceil(60 - elapsedSeconds);
+      throw Object.assign(new Error(`Please wait ${waitTime} seconds before requesting another OTP`), { status: 429 });
+    }
+  }
+
+  // Expire previous unverified OTPs
+  await model.expirePreviousOtps(katha_number, cleanMobile);
+
+  // Generate 4-digit OTP
+  const isDevBypass = shouldBypass();
+  const otpCode = isDevBypass ? getDevOtp() : String(Math.floor(1000 + Math.random() * 9000));
+
+  // Expiration time: 5 minutes from now
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const id = randomUUID();
+
+  // Save details in payment_verifications DB table
+  await model.createOtpVerification({
+    id,
+    katha_number,
+    mobile: cleanMobile,
+    otp_code: otpCode,
+    expires_at: expiresAt,
+  });
+
+  // Send OTP via Fast2SMS (or bypass in dev)
+  if (isDevBypass) {
+    console.log(`[DEV BYPASS OTP] Katha: ${katha_number}, Mobile: ${cleanMobile}, OTP: ${otpCode}`);
+  } else {
+    await sendSMSFast2SMS(cleanMobile, otpCode);
+  }
+
+  return {
+    success: true,
+    message: 'OTP sent successfully',
+    mobile: maskMobile(cleanMobile),
+  };
+}
+
+async function verifyOTP(data) {
+  const katha_number = String(data.katha_number || data.member_number || '').trim();
+  const rawMobile = String(data.mobile || '').trim();
+  const cleanMobile = rawMobile.replace(/\D/g, '').slice(-10);
+  const otpCode = String(data.otp || '').trim();
+
+  if (!katha_number || !cleanMobile || !otpCode) {
+    throw Object.assign(new Error('katha_number, mobile, and otp are required'), { status: 400 });
+  }
+
+  // Check locally in payment_verifications DB table (NO external API call!)
+  const record = await model.findValidOtp({
+    katha_number,
+    mobile: cleanMobile,
+    otp_code: otpCode,
+  });
+
+  if (!record) {
+    throw Object.assign(new Error('Invalid or expired OTP'), { status: 401 });
+  }
+
+  // Mark OTP verified in table
+  await model.markOtpVerified(record.id);
+
+  // Generate authenticated JWT token for payment portal session
+  const token = jwt.sign(
+    { id: katha_number, katha_number, mobile: cleanMobile, role: 'member' },
+    process.env.JWT_SECRET || 'sawtdeen-jwt-secret-2024',
+    { expiresIn: '1d' }
+  );
+
+  return {
+    success: true,
+    message: 'OTP verified successfully',
+    token,
+    member: {
+      katha_number,
+      mobile: cleanMobile,
+    },
+  };
+}
+
+const path = require('path');
+const b2 = require('../../utils/b2');
+
+async function submitPayment(data, user, file, authHeader) {
+  console.log('[PAYMENT SUBMIT INCOMING]', {
+    katha_no: data.khata_no || data.katha_number,
+    collectionType: data.collectionType || data.collection_type,
+    amount: data.amount,
+    month: data.month,
+    year: data.year,
+    user_id: user?.id,
+  });
+  let katha_number = String(
+    data.khata_no ||
+    data.khataNo ||
+    data.katha_number ||
+    data.member_number ||
+    data.rawFields?.khataNo ||
+    data.rawFields?.khata_no ||
+    ''
+  ).trim();
+
+  if (!katha_number && user?.katha_number && user.katha_number !== 'portal-admin') {
+    katha_number = String(user.katha_number).trim();
+  }
+  if (!katha_number && user?.id && user.id !== 'portal-admin') {
+    katha_number = String(user.id).trim();
+  }
+  if (!katha_number) katha_number = '501';
+
+  let member_name = data.member_name || data.memberData?.member_name || user?.name;
+  if (!member_name || member_name === 'Portal Admin') {
+    member_name = `Member ${katha_number}`;
+  }
+
+  const mobile = String(data.mobile || data.rawFields?.mobile || user?.mobile || '').trim();
+  const jamath = String(data.jamath || user?.jamath || 'BSJM Thodar').trim();
+  const collection_type = data.collectionType || data.collection_type || data.payment_type || 'payment';
+  const amount = data.amount || data.rawFields?.amount;
+  const month = data.month || data.rawFields?.month || '';
+  const year = data.year || data.rawFields?.year || '';
+  const remarks = data.remarks || data.rawFields?.remarks || '';
+  const payment_mode = data.payment_mode || data.paymentMode || data.rawFields?.payment_mode || data.rawFields?.paymentMode || 'Cash';
+  const utr = data.transaction_id || data.utr || null;
+
+  const cleanType = String(collection_type || '').toLowerCase().trim();
+  const cleanCategory = String(data.category || '').toLowerCase().trim();
+  const cleanPaymentMode = String(payment_mode || '').toLowerCase().trim();
+
+  const balanceKeys = [
+    'balance_ustad_salary',
+    'balance_vanthige',
+    'balance_uroose',
+    'balance_moulid',
+    'balance_ratheeb',
+    'balance_tharaveeh',
+    'balance_bakreed',
+    'balance_tiffin',
+    'balance_water',
+    'balance_electricity',
+    'balance_maintenance',
+    'balance_donation',
+    'balance_special',
+    'balance_salary',
+  ];
+
+  const isFromBalanceKeys = balanceKeys.some((k) => k === cleanType);
+
+  const rawIsBalance = data.is_balance_payment !== undefined ? data.is_balance_payment : data.rawFields?.is_balance_payment;
+  const isRequestedBalance = rawIsBalance === 1 || rawIsBalance === '1' || rawIsBalance === true || rawIsBalance === 'true';
+  const isBoolTrue = (val) => val === true || val === 'true' || val === 1 || val === '1';
+
+  // If Outstanding Balances then is_balance_payment = 1 else 0
+  const isOutstanding =
+    cleanType.startsWith('balance_') ||
+    isFromBalanceKeys ||
+    isRequestedBalance ||
+    isBoolTrue(data.isCardSelected) ||
+    isBoolTrue(data.isOutstandingPayment) ||
+    isBoolTrue(data.balanceAmountMode) ||
+    cleanCategory.includes('outstanding') ||
+    cleanCategory.includes('balance') ||
+    cleanPaymentMode === 'dues';
+
+  const is_balance_payment = isOutstanding ? 1 : 0;
+
+  if (!amount) {
+    throw Object.assign(new Error('amount is required'), { status: 400 });
+  }
+
+  let screenshot_url = '';
+
+  const { compressFile } = require('../../utils/file_compressor');
+  const documentModel = require('../document/document.model');
+
+  // 1. Upload screenshot file to local database (uploaded_documents)
+  if (file) {
+    try {
+      const compressed = await compressFile(file);
+      if (compressed && compressed.buffer) {
+        const originalName = file.originalname || 'screenshot.png';
+        const mimeType = compressed.mimeType || 'image/png';
+        const base64Str = compressed.buffer.toString('base64');
+        const fileData = `data:${mimeType};base64,${base64Str}`;
+        const fileUuid = randomUUID();
+        const fileName = b2.buildB2Key({
+          masjidName: data.masjid_name || 'BSJM Thodar',
+          certificateType: 'payment',
+          folder: 'payment-proofs',
+          originalName,
+        });
+
+        const port = process.env.PORT || 4000;
+        const baseUrl = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/+$/, '') : `http://localhost:${port}`;
+        const fileUrl = `${baseUrl}/api/documents/${fileUuid}`;
+
+        await documentModel.recordDocument({
+          file_uuid: fileUuid,
+          entity_type: 'payment',
+          category: 'payment-proofs',
+          masjid_name: data.masjid_name || 'BSJM Thodar',
+          original_name: originalName,
+          mime_type: mimeType,
+          original_size: compressed.originalSize || file.size || 0,
+          compressed_size: compressed.compressedSize || compressed.buffer.length,
+          b2_key: fileName,
+          file_url: fileUrl,
+          file_data: fileData,
+        }).catch(err => console.warn('[PAYMENT DOC RECORD WARN]', err.message));
+
+        screenshot_url = fileUrl; // Reference URL stored in main table
+      }
+    } catch (err) {
+      console.warn('Payment screenshot upload to DB failed:', err.message);
+    } finally {
+      if (file.path && fs.existsSync(file.path)) {
+        fs.unlink(file.path, () => {});
+      }
+    }
+  }
+
+  // 2. Handle base64 / URL screenshot
+  if (!screenshot_url && data.screenshot) {
+    if (typeof data.screenshot === 'string') {
+      if (data.screenshot.startsWith('http://') || data.screenshot.startsWith('https://')) {
+        screenshot_url = data.screenshot;
+      } else if (data.screenshot.startsWith('data:image')) {
+        try {
+          const matches = data.screenshot.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            const mimeType = matches[1];
+            const buffer = Buffer.from(matches[2], 'base64');
+            const fileName = `payment-screenshots/${Date.now()}-${randomUUID()}.png`;
+            const b2Res = await b2.uploadBuffer(buffer, fileName, mimeType);
+            screenshot_url = b2Res.url;
+          } else {
+            screenshot_url = data.screenshot;
+          }
+        } catch (e) {
+          console.warn('Failed to parse base64 screenshot:', e.message);
+          screenshot_url = data.screenshot;
+        }
+      }
+    } else if (typeof data.screenshot_url === 'string') {
+      screenshot_url = data.screenshot_url;
+    }
+  }
+
+  // 3. Save locally in mobile_be payment_requests table
+  const paymentId = randomUUID();
+  try {
+    await model.createRequest({
+      id: paymentId,
+      katha_number,
+      mobile,
+      member_name,
+      payment_type: collection_type,
+      amount: Number(amount),
+      payment_mode,
+      month: month ? `${month} ${year}`.trim() : (year || 'N/A'),
+      remarks,
+      category: data.category || null,
+      collection_id: data.collectionId || null,
+      is_balance_payment,
+      raw_data: data,
+      upi_id: data.upi_id || null,
+      screenshot_url: screenshot_url || null,
+      utr,
+      user_id: user?.id || null,
+    });
+    console.log(`[PAYMENT SUBMIT LOCAL SUCCESS] Stored payment request ID: ${paymentId} in local DB`);
+  } catch (err) {
+    console.error(`[PAYMENT SUBMIT LOCAL ERROR] Failed to store payment request in local DB: ${err.message}`, err);
+    throw Object.assign(new Error(`Failed to save payment request: ${err.message}`), { status: 500 });
+  }
+
+  // 4. Forward to external Jamath API
+  const baseUrl = getJamathBaseUrl(jamath);
+  if (baseUrl) {
+    const externalUrl = `${baseUrl.replace(/\/+$/, '')}/api/payment/submit`;
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, */*',
+      };
+      if (authHeader) {
+        headers['Authorization'] = authHeader;
+      }
+
+      const payload = {
+        ...data,
+        katha_number: String(katha_number),
+        khata_no: String(katha_number),
+        khataNo: String(katha_number),
+        mobile: mobile || undefined,
+        collection_type,
+        collectionType: collection_type,
+        amount: String(amount),
+        month: month || undefined,
+        year: year || undefined,
+        remarks: remarks || undefined,
+        payment_mode,
+        paymentMode: payment_mode,
+        is_balance_payment: is_balance_payment !== undefined ? is_balance_payment : undefined,
+        transaction_id: utr || undefined,
+        screenshot: screenshot_url || undefined,
+        screenshot_url: screenshot_url || undefined,
+        jamath: String(jamath),
+        masjid_name: String(jamath),
+        jamath_name: String(jamath),
+      };
+
+      const response = await axiosPostWithRetry(externalUrl, payload, { headers, timeout: 30000 });
+      return {
+        success: true,
+        message: response.data?.message || 'Payment submitted successfully',
+        payment_id: paymentId,
+        external_payment_id: response.data?.payment_id || undefined,
+        screenshot_url,
+        data: response.data,
+      };
+    } catch (error) {
+      console.warn('External Jamath submit API response warning:', error.response?.data || error.message);
+    }
+  }
+
+  return {
+    success: true,
+    message: 'Payment submitted successfully',
+    payment_id: paymentId,
+    screenshot_url,
+  };
+}
+
+
+async function notifyApproval(data) {
+  const paymentId = data.payment_id || data.id;
+  const kathaNumber = data.katha_number || data.member_number;
+  const mobile = data.mobile;
+  const status = data.status || 'approved';
+  const amount = data.amount || '';
+  const collectionType = data.collection_type || data.payment_type || 'payment';
+
+  if (!kathaNumber && !mobile && !paymentId) {
+    throw Object.assign(new Error('payment_id, katha_number, or mobile is required'), { status: 400 });
+  }
+
+  const isApproved = String(status).toLowerCase() === 'approved';
+  const title = isApproved ? 'Payment Approved' : 'Payment Rejected';
+  const customMsg = data.message || (isApproved
+    ? `Dear member, your ${collectionType} payment of Rs.${amount} has been approved.`
+    : `Dear member, your ${collectionType} payment of Rs.${amount} has been rejected.${data.remark ? ' Reason: ' + data.remark : ''}`);
+
+  let targetPhone = mobile;
+  let userId = null;
+
+  if (paymentId) {
+    try {
+      const reqRecord = await model.findRequestById(paymentId);
+      if (reqRecord) {
+        userId = reqRecord.user_id;
+        if (!targetPhone) targetPhone = reqRecord.mobile;
+      }
+    } catch (_) {}
+  }
+
+  if (!userId && targetPhone) {
+    try {
+      const { pool } = require('../../config/db');
+      const [[uRow]] = await pool.query('SELECT id FROM users WHERE phone = ? LIMIT 1', [targetPhone]);
+      if (uRow?.id) userId = uRow.id;
+    } catch (_) {}
+  }
+
+  if (userId) {
+    const notifId = randomUUID();
+    await notificationModel.create({
+      id: notifId,
+      user_id: userId,
+      title,
+      body: customMsg,
+      type: 'payment',
+      data: { payment_id: paymentId, status, remark: data.remark || '' },
+    }).catch(() => {});
+  }
+
+  let smsResult = null;
+  if (targetPhone) {
+    const cleanMobile = String(targetPhone).replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length === 10) {
+      if (shouldBypass()) {
+        console.log(`[DEV BYPASS SMS NOTIFICATION] Mobile: ${cleanMobile}, Msg: ${customMsg}`);
+        smsResult = { return: true, message: 'SMS bypassed in dev' };
+      } else {
+        try {
+          smsResult = await sendSMSFast2SMS(cleanMobile, customMsg);
+        } catch (smsErr) {
+          console.warn('Fast2SMS notification warning:', smsErr.message);
+          smsResult = { return: false, error: smsErr.message };
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    message: 'User notified successfully',
+    notification: {
+      title,
+      body: customMsg,
+      mobile: targetPhone ? maskMobile(targetPhone) : null,
+      sms_sent: Boolean(smsResult),
+    },
+  };
+}
+
 module.exports = {
   createRequest,
   listRequests,
@@ -84,4 +627,14 @@ module.exports = {
   getMemberRequests,
   getSettings,
   updateSettings,
+  verifyMember,
+  sendOTP,
+  verifyOTP,
+  submitPayment,
+  notifyApproval,
 };
+
+
+
+
+

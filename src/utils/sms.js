@@ -63,8 +63,39 @@ async function sendOtp(phone, otp) {
   }
 }
 
+const sendSMSFast2SMS = async (mobileNumber, messageBody) => {
+  try {
+    const payload = {
+      route: "dlt",
+      sender_id: "SWTCDT",
+      message: "215373",
+      variables_values: messageBody,
+      flash: 0,
+      numbers: Array.isArray(mobileNumber) ? mobileNumber.join(',') : String(mobileNumber),
+    };
+    const response = await axios.post(
+      "https://www.fast2sms.com/dev/bulkV2",
+      payload,
+      {
+        headers: {
+          authorization: process.env.FAST2SMS_API_KEY || "2FnvQMTtqWB5j4XzR6s3lLIbHKZhw1mPen90Ckg8xNJEAYScGVUeDl7uPCTbO4oZwExVLi9Fn6va3kArtQ",
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    console.log("fast2sms", response.data);
+    return response.data;
+  } catch (error) {
+    console.error(
+      error?.response?.data || error.message
+    );
+    return null;
+  }
+};
+
 function getDevOtp() {
   return DEV_OTP;
 }
 
-module.exports = { sendOtp, getDevOtp, shouldBypass };
+module.exports = { sendOtp, sendSMSFast2SMS, getDevOtp, shouldBypass };
+

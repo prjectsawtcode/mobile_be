@@ -12,9 +12,10 @@ exports.createRequest = Joi.object({
 });
 
 exports.updateStatus = Joi.object({
-  status: Joi.string().valid('approved', 'rejected').required(),
+  status: Joi.string().valid('approved', 'rejected', 'pending').required(),
   remark: Joi.string().max(500).allow('', null),
-});
+  jamath: Joi.string().allow('', null),
+}).unknown(true);
 
 exports.updateSettings = Joi.object({
   masjid_name: Joi.string().max(200),
@@ -25,3 +26,33 @@ exports.updateSettings = Joi.object({
   bank_name: Joi.string().allow('', null),
   account_holder: Joi.string().allow('', null),
 });
+
+exports.verifyMember = Joi.object({
+  member_number: Joi.string().allow('', null),
+  katha_number: Joi.string().allow('', null),
+  mobile: Joi.string().required(),
+  jamath: Joi.string().allow('', null),
+  masjid_name: Joi.string().allow('', null),
+  jamath_name: Joi.string().allow('', null),
+}).unknown(true);
+
+exports.sendOTP = Joi.object({
+  member_number: Joi.string().allow('', null),
+  katha_number: Joi.string().allow('', null),
+  mobile: Joi.string().required(),
+  jamath: Joi.string().allow('', null),
+  masjid_name: Joi.string().allow('', null),
+  jamath_name: Joi.string().allow('', null),
+}).unknown(true);
+
+exports.verifyOTP = Joi.object({
+  member_number: Joi.string().allow('', null),
+  katha_number: Joi.string().allow('', null),
+  mobile: Joi.string().required(),
+  otp: Joi.string().required(),
+  jamath: Joi.string().allow('', null),
+  masjid_name: Joi.string().allow('', null),
+  jamath_name: Joi.string().allow('', null),
+}).unknown(true);
+
+
