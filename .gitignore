@@ -7,3 +7,8 @@ coverage/
 uploads
 .vercel
 .env*.local
+
+# Firebase service account private keys — never commit these
+firebase-service-account*.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json

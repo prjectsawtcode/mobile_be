@@ -1,6 +1,7 @@
-const { randomUUID } = require("crypto");
-const { delPattern } = require("../../config/cache");
-const model = require("./announcement.model");
+const { randomUUID } = require('crypto');
+const { delPattern } = require('../../config/cache');
+const model = require('./announcement.model');
+const notificationService = require('../notification/notification.service');
 
 async function list(query) {
   return model.findAll({
@@ -31,7 +32,17 @@ async function create(authorId, data) {
     author_id: authorId,
     ...data,
   });
-  await delPattern("announcements:*");
+  await delPattern('announcements:*');
+
+  // Fan out to the audience. This MUST be awaited: on Vercel the function is
+  // frozen the moment the response is sent, so a fire-and-forget promise is
+  // discarded and the push silently never happens. The catch keeps the
+  // original guarantee — a slow or failing FCM call cannot fail a publish
+  // that has already succeeded — at the cost of a little response latency.
+  await notificationService
+    .notifyAnnouncement(authorId, ann)
+    .catch((e) => console.error('[announcement] notify error:', e.message));
+
   return ann;
 }
 

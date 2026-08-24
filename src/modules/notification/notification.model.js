@@ -55,4 +55,17 @@ async function create(data) {
   );
 }
 
-module.exports = { init, findByUser, markRead, markAllRead, unreadCount, create };
+// One statement per broadcast instead of one per member; chunked so a large
+// membership cannot exceed max_allowed_packet.
+async function createMany(rows, chunkSize = 500) {
+  if (!rows.length) return;
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    await pool.query(
+      'INSERT INTO notifications (id, user_id, title, body, type, data) VALUES ?',
+      [chunk.map((r) => [r.id, r.user_id, r.title, r.body, r.type, JSON.stringify(r.data)])]
+    );
+  }
+}
+
+module.exports = { init, findByUser, markRead, markAllRead, unreadCount, create, createMany };

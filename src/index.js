@@ -12,6 +12,7 @@ if (require.main === module) {
     try {
       await db.init();
       await db.seed();
+      require('./config/firebase').init();
       app.listen(PORT, () => console.log(`SawtDeen API running on port ${PORT}`));
     } catch (err) {
       console.error('Failed to start:', err);
