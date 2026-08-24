@@ -174,7 +174,17 @@ async function sendBillPaymentNotification({ userId, user_id, amount, bill_title
 async function notifyAnnouncement(authorId, announcement) {
   try {
     const scope = String(announcement.privacy || 'everyone').toLowerCase();
-    const isMasjidScoped = scope === 'masjid';
+
+    // ---------------------------------------------------------------------
+    // TEMPORARY (testing): every announcement goes to every user, including
+    // the author, whatever its privacy scope. Set PUSH_ALL_ANNOUNCEMENTS=false
+    // to restore masjid scoping. Remove this block before launch.
+    // ---------------------------------------------------------------------
+    const pushToEveryone =
+      String(process.env.PUSH_ALL_ANNOUNCEMENTS ?? 'true').toLowerCase() !==
+      'false';
+
+    const isMasjidScoped = scope === 'masjid' && !pushToEveryone;
 
     let audience;
     let masjid = null;
@@ -244,6 +254,7 @@ async function notifyAnnouncement(authorId, announcement) {
 
     console.log(
       `[announcement ${announcement.id}] scope=${scope}` +
+      (pushToEveryone && scope === 'masjid' ? ' (overridden to everyone)' : '') +
       (masjid ? ` masjid="${masjid}"` : '') +
       ` recipients=${audience.length} devices=${tokens.length} sent=${result.sent}`
     );

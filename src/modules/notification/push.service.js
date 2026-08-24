@@ -4,6 +4,9 @@ const { pool } = require('../../config/db');
 // FCM caps a multicast at 500 tokens per request.
 const BATCH_SIZE = 500;
 
+// Mirrors LocalNotificationService.channelId in the Flutter app.
+const CHANNEL_ID = 'sawtdeen_high_importance_channel';
+
 // A token that FCM reports as dead will never work again — stop storing it.
 const DEAD_TOKEN_CODES = new Set([
   'messaging/registration-token-not-registered',
@@ -53,7 +56,18 @@ async function sendToTokens(tokens, { title, body, data = {}, url } = {}) {
         // `notification` makes Android/iOS render it while the app is backgrounded or killed.
         notification: { title, body },
         data: payload,
-        android: { priority: 'high', notification: { sound: 'default' } },
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            // Must match the channel the app registers in
+            // LocalNotificationService. Without it Android drops the message
+            // into FCM's generic fallback channel at default importance, so it
+            // slides silently into the shade instead of showing a heads-up
+            // banner, and appears under a meaningless name in app settings.
+            channelId: CHANNEL_ID,
+          },
+        },
         apns: { payload: { aps: { sound: 'default' } } },
       });
 

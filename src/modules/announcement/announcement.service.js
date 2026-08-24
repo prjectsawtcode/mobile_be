@@ -34,10 +34,12 @@ async function create(authorId, data) {
   });
   await delPattern('announcements:*');
 
-  // Fan out to the audience. Deliberately not awaited into the response path:
-  // publishing has already succeeded, and a slow or failing FCM call must not
-  // hold up (or fail) the request the committee member is waiting on.
-  notificationService
+  // Fan out to the audience. This MUST be awaited: on Vercel the function is
+  // frozen the moment the response is sent, so a fire-and-forget promise is
+  // discarded and the push silently never happens. The catch keeps the
+  // original guarantee — a slow or failing FCM call cannot fail a publish
+  // that has already succeeded — at the cost of a little response latency.
+  await notificationService
     .notifyAnnouncement(authorId, ann)
     .catch((e) => console.error('[announcement] notify error:', e.message));
 
