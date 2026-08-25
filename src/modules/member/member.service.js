@@ -82,6 +82,7 @@ async function getMemberBalanceDetails(query, user) {
   }
 
   // Adjust external balances with locally approved payments in payment_requests
+  let paidTotals = {};
   try {
     const [approvedPayments] = await pool.query(
       `SELECT payment_type, amount, is_balance_payment FROM payment_requests 
@@ -94,7 +95,6 @@ async function getMemberBalanceDetails(query, user) {
       : (Array.isArray(responseData?.data) ? responseData.data : null);
 
     if (items && approvedPayments.length > 0) {
-      const paidTotals = {};
       for (const p of approvedPayments) {
         const key = getBalanceKey(p.payment_type);
         if (key) {
@@ -125,7 +125,140 @@ async function getMemberBalanceDetails(query, user) {
   }
 
   // Strip wallet amount fields so they are never exposed/shown
-  return stripWalletFields(responseData);
+  return buildCleanMemberBalanceResponse(responseData, kathaNumber, jamath, paidTotals);
+}
+
+function formatBalanceTitle(key) {
+  if (!key) return '';
+  const clean = String(key).replace(/^balance_/i, '');
+  return clean
+    .split(/[\s_]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function buildCleanMemberBalanceResponse(responseData, kathaNumber, jamath, paidTotals = {}) {
+  const cleanData = stripWalletFields(responseData);
+  const remainingPaidTotals = { ...paidTotals };
+
+  let rawItems = [];
+  if (Array.isArray(cleanData)) {
+    rawItems = cleanData;
+  } else if (cleanData && typeof cleanData === 'object') {
+    if (Array.isArray(cleanData.data)) {
+      rawItems = cleanData.data;
+    } else if (cleanData.data && typeof cleanData.data === 'object') {
+      rawItems = [cleanData.data];
+    } else {
+      rawItems = [cleanData];
+    }
+  }
+
+  const allPendingBalances = [];
+  const processedKeys = new Set();
+  let totalOutstanding = 0;
+
+  // 1. Collect pending unpaid bills (payment_status === 0)
+  rawItems.forEach((item, index) => {
+    if (!item || typeof item !== 'object') return;
+
+    let isUnpaidBill = item.payment_status === 0 || item.payment_status === '0';
+    let numAmt = Number(item.amount) || 0;
+
+    // Check if local approved payments cover this unpaid bill
+    if (isUnpaidBill && numAmt > 0) {
+      const colType = item.collection_type || 'member_collection';
+      const bKey = getBalanceKey(colType);
+      const availablePaid = remainingPaidTotals[bKey] || 0;
+
+      if (availablePaid >= numAmt) {
+        remainingPaidTotals[bKey] = availablePaid - numAmt;
+        isUnpaidBill = false;
+        item.payment_status = 1;
+      }
+    }
+
+    if (isUnpaidBill && numAmt > 0) {
+      totalOutstanding += numAmt;
+      const colType = item.collection_type || 'member_collection';
+      const cleanType = colType.replace(/^balance_/i, '');
+
+      allPendingBalances.push({
+        id: item.collection_id || item.id || item.receipt_no || `bill-${index}`,
+        key: colType.startsWith('balance_') ? colType : `balance_${colType}`,
+        collection_type: cleanType,
+        title: formatBalanceTitle(colType) + (item.month ? ` (${item.month})` : ''),
+        amount: numAmt.toFixed(2),
+        month: item.month || '',
+        year: item.year || '',
+        is_balance_payment: item.is_balance_payment ?? 0,
+        payment_status: 0, // 0 = unpaid (enables Pay Now)
+        can_pay: true,
+        collection_id: item.collection_id || item.id || null,
+        receipt_no: item.receipt_no || null,
+        remarks: item.remarks || '',
+      });
+    }
+
+    // 2. Check for non-zero balance_* fields on member records
+    for (const [key, val] of Object.entries(item)) {
+      if (key.toLowerCase().startsWith('balance_')) {
+        const numVal = Number(val);
+        const cleanType = key.replace(/^balance_/i, '');
+        if (!isNaN(numVal) && numVal !== 0 && !processedKeys.has(cleanType)) {
+          processedKeys.add(cleanType);
+          totalOutstanding += numVal;
+          allPendingBalances.push({
+            id: `bal-${cleanType}`,
+            key: key,
+            collection_type: cleanType,
+            title: formatBalanceTitle(key),
+            amount: numVal.toFixed(2),
+            month: '',
+            year: item.year || '',
+            is_balance_payment: 1,
+            payment_status: 0,
+            can_pay: true,
+          });
+        }
+      }
+    }
+  });
+
+  const formattedItems = rawItems.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+
+    const itemKatha = item.katha_number || item.katha_no || item.khata_no || item.khataNo || item.kathaNo || kathaNumber;
+    const isUnpaid = item.payment_status === 0 || item.payment_status === '0';
+
+    return {
+      ...item,
+      katha_number: String(itemKatha),
+      outstanding_balance: totalOutstanding.toFixed(2),
+      is_balance_payment: item.is_balance_payment ?? (totalOutstanding > 0 ? 1 : 0),
+      payment_status: isUnpaid ? 0 : item.payment_status,
+      can_pay: isUnpaid || totalOutstanding > 0,
+    };
+  });
+
+  const finalOutstanding = totalOutstanding.toFixed(2);
+  const rootPaymentStatus = totalOutstanding > 0 ? 0 : 1;
+  const firstItem = formattedItems[0] || {};
+
+  return {
+    success: true,
+    jamath,
+    katha_number: String(kathaNumber),
+    member_name: firstItem.member_name || firstItem.name || firstItem.member_name_en || null,
+    mobile: firstItem.mobile || firstItem.phone || firstItem.mobile_no || null,
+    outstanding_balance: finalOutstanding,
+    is_balance_payment: totalOutstanding > 0 ? 1 : 0,
+    payment_status: rootPaymentStatus,
+    can_pay: totalOutstanding > 0,
+    balances: allPendingBalances,
+    data: formattedItems,
+    items: formattedItems,
+  };
 }
 
 module.exports = {

@@ -1,3 +1,4 @@
+const easebuzz = require('../../utils/easebuzz');
 const { randomUUID } = require('crypto');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
@@ -619,6 +620,416 @@ async function notifyApproval(data) {
   };
 }
 
+
+function trimTrailingSlash(str) {
+  if (!str) return '';
+  let s = String(str).trim();
+  while (s.endsWith('/')) {
+    s = s.slice(0, -1);
+  }
+  return s;
+}
+
+async function initiateEasebuzzPayment(data, user) {
+  let katha_number = String(
+    data.khata_no ||
+    data.khataNo ||
+    data.katha_number ||
+    data.member_number ||
+    data.rawFields?.khataNo ||
+    data.rawFields?.khata_no ||
+    ''
+  ).trim();
+  if (!katha_number && user?.katha_number && user.katha_number !== 'portal-admin') {
+    katha_number = String(user.katha_number).trim();
+  }
+  if (!katha_number) katha_number = '501';
+
+  let member_name = data.member_name || data.memberData?.member_name || user?.name || ('Member ' + katha_number);
+  const mobile = String(data.mobile || data.rawFields?.mobile || user?.mobile || '9448348128').trim();
+  const jamath = String(data.jamath || user?.jamath || 'BSJM Thodar').trim();
+  const collection_type = data.collectionType || data.collection_type || data.payment_type || 'ustad_salary';
+  const amount = data.amount || data.rawFields?.amount;
+  const month = data.month || data.rawFields?.month || '';
+  const year = data.year || data.rawFields?.year || '';
+  const category = data.category || 'member-collection';
+  const is_balance_payment = data.is_balance_payment !== undefined ? data.is_balance_payment : 0;
+
+  if (!amount || Number(amount) <= 0) {
+    throw Object.assign(new Error('Valid amount is required to initiate online payment'), { status: 400 });
+  }
+
+  const jamathSlug = String(jamath).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8) || 'BSJM';
+  const txnid = 'TXN_' + jamathSlug + '_' + Date.now() + '_' + Math.floor(1000 + Math.random() * 9000);
+
+  const port = process.env.PORT || 4000;
+  const rawBackend = process.env.BACKEND_URL || ('http://localhost:' + port);
+  const backendUrl = trimTrailingSlash(rawBackend);
+  const surl = backendUrl + '/api/payment/easebuzz/response';
+  const furl = backendUrl + '/api/payment/easebuzz/response';
+
+  const config = easebuzz.getConfig(jamath);
+
+  function sanitizeUdf(val) {
+    if (!val) return '';
+    return String(val).replace(new RegExp('[^a-zA-Z0-9 -]', 'g'), ' ').replace(new RegExp('\s+', 'g'), ' ').trim().substring(0, 100);
+  }
+
+  const initiatePayload = {
+    txnid,
+    amount: String(amount),
+    productinfo: sanitizeUdf(collection_type) || 'payment',
+    firstname: sanitizeUdf(member_name) || 'Member',
+    email: katha_number + '@sawtdeen.com',
+    phone: mobile.replace(new RegExp('\D', 'g'), '').slice(-10) || '9448348128',
+    surl,
+    furl,
+    udf1: sanitizeUdf(katha_number),
+    udf2: sanitizeUdf(jamath),
+    udf3: sanitizeUdf(collection_type),
+    udf4: sanitizeUdf(month),
+    udf5: sanitizeUdf(year),
+    udf6: sanitizeUdf(is_balance_payment ? '1' : '0'),
+    udf7: sanitizeUdf(category),
+  };
+
+  const easeRes = await easebuzz.callInitiatePaymentAPI(initiatePayload, config.merchantKey, config.salt, config.env);
+
+  if (easeRes.status !== 1 || !easeRes.access_key) {
+    throw Object.assign(new Error(easeRes.error || 'Failed to initiate payment with Easebuzz'), { status: 500 });
+  }
+
+  const onlineTxnId = randomUUID();
+  await model.createOnlineTransaction({
+    id: onlineTxnId,
+    txnid,
+    katha_number,
+    mobile,
+    amount: Number(amount),
+    jamath,
+    collection_type,
+    month,
+    year,
+    access_key: easeRes.access_key,
+    status: 'INITIATED',
+    request_payload: data,
+  });
+
+  return {
+    success: true,
+    txnid,
+    access_key: easeRes.access_key,
+    url: easeRes.url,
+  };
+}
+
+async function handleEasebuzzResponse(postData) {
+  console.log('[EASEBUZZ CALLBACK RECEIVED]', postData);
+  const jamath = postData.udf2 || 'BSJM Thodar';
+  const config = easebuzz.getConfig(jamath);
+
+  const generatedHash = easebuzz.getReverseHashKey(postData, config.salt);
+  const receivedHash = postData.hash || '';
+
+  let hashMatch = false;
+  try {
+    const crypto = require('crypto');
+    hashMatch = crypto.timingSafeEqual(
+      Buffer.from(generatedHash, 'utf8'),
+      Buffer.from(receivedHash, 'utf8')
+    );
+  } catch (e) {
+    hashMatch = false;
+  }
+
+  const txnid = postData.txnid;
+  if (!txnid) {
+    throw Object.assign(new Error('Invalid callback data: missing txnid'), { status: 400 });
+  }
+
+  const existingTxn = await model.findOnlineTransactionByTxnId(txnid);
+  const reqPayload = existingTxn && existingTxn.request_payload ? (typeof existingTxn.request_payload === 'string' ? JSON.parse(existingTxn.request_payload) : existingTxn.request_payload) : {};
+
+  const isSuccess = hashMatch && postData.status === 'success';
+  const statusStr = isSuccess ? 'SUCCESS' : 'FAILED';
+
+  await model.updateOnlineTransactionStatus(
+    txnid,
+    statusStr,
+    postData,
+    postData.easebuzz_id,
+    postData.bank_ref_num
+  );
+
+  const kathaNo = postData.udf1 || existingTxn?.katha_number || reqPayload.khata_no || reqPayload.katha_number || '501';
+  const mobile = postData.phone || existingTxn?.mobile || reqPayload.mobile || '9448348128';
+  const amount = postData.amount || existingTxn?.amount || reqPayload.amount || '451';
+  const collectionType = postData.udf3 || existingTxn?.collection_type || reqPayload.collectionType || reqPayload.collection_type || 'ustad_salary';
+  const month = postData.udf4 || existingTxn?.month || reqPayload.month || 'April';
+  const year = postData.udf5 || existingTxn?.year || reqPayload.year || '2025-2026';
+  const isBalancePayment = (postData.udf6 === '1' || reqPayload.is_balance_payment === 1 || reqPayload.is_balance_payment === '1') ? 1 : 0;
+  const category = postData.udf7 || reqPayload.category || 'member-collection';
+  const nowIso = new Date().toISOString();
+
+  if (isSuccess) {
+    try {
+      const paymentId = randomUUID();
+      await model.createRequest({
+        id: paymentId,
+        katha_number: kathaNo,
+        mobile,
+        member_name: reqPayload.member_name || ('Member ' + kathaNo),
+        payment_type: collectionType,
+        amount: Number(amount),
+        payment_mode: 'Online',
+        month: month ? (month + ' ' + year).trim() : (year || 'N/A'),
+        remarks: reqPayload.remarks || ('Online Easebuzz Txn: ' + txnid),
+        category,
+        collection_id: reqPayload.collectionId || (collectionType + '-form'),
+        is_balance_payment: isBalancePayment,
+        raw_data: { ...reqPayload, easebuzz_response: postData },
+        upi_id: postData.bank_ref_num || null,
+        screenshot_url: null,
+        utr: postData.easebuzz_id || txnid,
+        user_id: null,
+      });
+      await model.updateRequestStatus(paymentId, 'approved', null, 'Approved automatically via Easebuzz');
+      console.log('[ONLINE PAYMENT SUCCESS] Created approved payment_request ID: ' + paymentId);
+    } catch (err) {
+      console.error('[ONLINE PAYMENT LOCAL RECORD ERROR] ' + err.message);
+    }
+
+    const targetJamath = postData.udf2 || existingTxn?.jamath || 'BSJM Thodar';
+    const baseUrl = getJamathBaseUrl(targetJamath);
+    if (baseUrl) {
+      // 1. Sync to standard form submit endpoint
+      const externalUrl = trimTrailingSlash(baseUrl) + '/api/form/submit';
+      const submitPayload = {
+        khataNo: String(kathaNo),
+        khata_no: String(kathaNo),
+        katha_number: String(kathaNo),
+        mobile: String(mobile),
+        amount: String(amount),
+        use_wallet: false,
+        wallet_amount_used: 0,
+        paymentMode: 'dues',
+        payment_mode: 'dues',
+        month: String(month),
+        year: String(year),
+        remarks: reqPayload.remarks || '',
+        rawFields: reqPayload.rawFields || {
+          khataNo: String(kathaNo),
+          mobile: String(mobile),
+          amount: String(amount),
+          use_wallet: false,
+          wallet_amount_used: 0,
+          paymentMode: 'dues',
+          payment_mode: 'dues',
+          month: String(month),
+          year: String(year),
+          remarks: reqPayload.remarks || ''
+        },
+        category: String(category),
+        collectionType: String(collectionType),
+        collection_type: String(collectionType),
+        collectionId: collectionType + '-form',
+        memberData: null,
+        formVariant: 'standard',
+        hasFiles: false,
+        fileMetadata: [],
+        is_balance_payment: isBalancePayment,
+        balanceAmountMode: false,
+        submittedAt: nowIso,
+        member_name: reqPayload.member_name || ('Member ' + kathaNo),
+        utr: postData.easebuzz_id || txnid,
+        approved_by: 'Super Admin',
+        approvedBy: 'Super Admin',
+        collected_by: 'Super Admin',
+        collectedBy: 'Super Admin',
+        date: nowIso,
+        collection_mode: 'Online',
+        collectionMode: 'Online',
+        admin_remarks: 'Online Payment Success',
+        status: 'APPROVED'
+      };
+
+      try {
+        await axiosPostWithRetry(
+          externalUrl,
+          submitPayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': '65bede072aec',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+            timeout: 30000,
+          }
+        );
+        console.log('[EXTERNAL JAMATH SUBMIT SUCCESS] Posted to ' + externalUrl);
+      } catch (extErr) {
+        console.error('[EXTERNAL JAMATH SUBMIT ERROR] Failed posting to ' + externalUrl + ':', extErr.message);
+      }
+
+      // 2. Sync to online payment balance deduction endpoint
+      const syncOnlineUrl = trimTrailingSlash(baseUrl) + '/api/payment/sync-online-payment';
+      try {
+        await axiosPostWithRetry(
+          syncOnlineUrl,
+          {
+            katha_number: String(kathaNo),
+            khata_no: String(kathaNo),
+            collection_type: String(collectionType),
+            amount: Number(amount),
+            is_balance_payment: isBalancePayment,
+            transaction_id: txnid,
+            receipt_no: postData.easebuzz_id || txnid,
+            payment_mode: 'Online',
+            month: String(month),
+            year: String(year),
+            mobile: String(mobile),
+            jamath: targetJamath,
+          },
+          { timeout: 30000 }
+        );
+        console.log('[EXTERNAL ONLINE DEDUCTION SYNC SUCCESS] Posted to ' + syncOnlineUrl);
+      } catch (syncErr) {
+        console.warn('[EXTERNAL ONLINE DEDUCTION SYNC WARN] Notice posting to ' + syncOnlineUrl + ':', syncErr.message);
+      }
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return {
+      status: 'SUCCESS',
+      redirect_url: frontendUrl + '/payment/verify?status=success&txnid=' + txnid + '&amount=' + amount,
+      data: postData,
+    };
+  } else {
+    const targetJamath = postData.udf2 || existingTxn?.jamath || 'BSJM Thodar';
+    const baseUrl = getJamathBaseUrl(targetJamath);
+    if (baseUrl) {
+      const externalUrl = trimTrailingSlash(baseUrl) + '/api/form/submit';
+      const rejectPayload = {
+        category: String(collectionType),
+        collectionType: String(collectionType),
+        khata_no: String(kathaNo),
+        status: 'REJECTED',
+        admin_remarks: postData.error_Message || 'Online Payment Failed',
+        submittedAt: nowIso
+      };
+
+      try {
+        await axiosPostWithRetry(
+          externalUrl,
+          rejectPayload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': '65bede072aec',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+            timeout: 30000,
+          }
+        );
+        console.log('[EXTERNAL JAMATH REJECT SUCCESS] Posted to ' + externalUrl);
+      } catch (extErr) {
+        console.error('[EXTERNAL JAMATH REJECT ERROR] Failed posting to ' + externalUrl + ':', extErr.message);
+      }
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return {
+      status: 'FAILED',
+      redirect_url: frontendUrl + '/payment/verify?status=failed&txnid=' + txnid + '&error=' + encodeURIComponent(postData.error_Message || 'Payment Failed'),
+      data: postData,
+    };
+  }
+}
+
+async function getEasebuzzStatus(txnid) {
+  const existingTxn = await model.findOnlineTransactionByTxnId(txnid);
+  if (!existingTxn) {
+    throw Object.assign(new Error('Transaction not found for txnid: ' + txnid), { status: 404 });
+  }
+
+  let currentStatus = existingTxn.status;
+
+  try {
+    const jamath = existingTxn.jamath || 'BSJM Thodar';
+    const config = easebuzz.getConfig(jamath);
+    const statusRes = await easebuzz.callTransactionAPI(txnid, config.merchantKey, config.salt, config.env);
+    if (statusRes && statusRes.status && statusRes.msg) {
+      if (statusRes.msg.status === 'success') {
+        currentStatus = 'SUCCESS';
+        await model.updateOnlineTransactionStatus(txnid, 'SUCCESS', statusRes, statusRes.msg.easepayid, statusRes.msg.bank_ref_num);
+      } else if (statusRes.msg.status === 'userCancelled') {
+        currentStatus = 'FAILED';
+        await model.updateOnlineTransactionStatus(txnid, 'FAILED', statusRes);
+      } else if (statusRes.msg.status === 'failure') {
+        const ageMs = Date.now() - new Date(existingTxn.created_at || Date.now()).getTime();
+        if (ageMs > 10 * 60 * 1000) {
+          currentStatus = 'FAILED';
+          await model.updateOnlineTransactionStatus(txnid, 'FAILED', statusRes);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[STATUS API REFRESH ERROR]', err.message);
+  }
+
+  return {
+    success: true,
+    status: currentStatus,
+    amount: existingTxn.amount,
+    txnid: existingTxn.txnid,
+    local_transaction: existingTxn,
+  };
+}
+
+async function getReceiptDetails(receiptNo) {
+  const { pool } = require('../../config/db');
+  const [rows] = await pool.query(
+    'SELECT * FROM payment_requests WHERE id = ? OR utr = ? OR id LIKE ? ORDER BY created_at DESC LIMIT 1',
+    [receiptNo, receiptNo, `%${receiptNo}%`]
+  );
+
+  if (rows && rows.length > 0) {
+    const r = rows[0];
+    const rawData = typeof r.raw_data === 'string' ? JSON.parse(r.raw_data || '{}') : (r.raw_data || {});
+    return {
+      success: true,
+      receipt: {
+        receipt_no: r.id,
+        transaction_id: r.utr || r.id,
+        katha_number: r.katha_number,
+        member_name: r.member_name || ('Member ' + r.katha_number),
+        mobile: r.mobile,
+        collection_type: r.payment_type,
+        amount: r.amount,
+        payment_mode: r.payment_mode || 'Online',
+        payment_done_at: r.created_at,
+        is_balance_payment: r.is_balance_payment || 0,
+        month: r.month,
+        remarks: r.remarks,
+        jamath: rawData.jamath || 'BSJM Thodar',
+      },
+    };
+  }
+
+  const baseUrl = getJamathBaseUrl('BSJM Thodar');
+  if (baseUrl) {
+    try {
+      const extUrl = trimTrailingSlash(baseUrl) + '/api/payment/receipt/' + encodeURIComponent(receiptNo);
+      const extRes = await axiosGetWithRetry(extUrl, { timeout: 15000 });
+      if (extRes?.data?.success) {
+        return extRes.data;
+      }
+    } catch (_) {}
+  }
+
+  throw Object.assign(new Error('Receipt not found'), { status: 404 });
+}
+
 module.exports = {
   createRequest,
   listRequests,
@@ -632,6 +1043,10 @@ module.exports = {
   verifyOTP,
   submitPayment,
   notifyApproval,
+  initiateEasebuzzPayment,
+  handleEasebuzzResponse,
+  getEasebuzzStatus,
+  getReceiptDetails,
 };
 
 

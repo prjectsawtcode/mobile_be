@@ -71,10 +71,34 @@ const migrationAddExtraColumns = `
   ADD COLUMN raw_data JSON
 `;
 
+const createOnlineTransactionsTable = `
+  CREATE TABLE IF NOT EXISTS online_transactions (
+    id CHAR(36) PRIMARY KEY,
+    txnid VARCHAR(100) UNIQUE NOT NULL,
+    katha_number VARCHAR(50),
+    mobile VARCHAR(20),
+    amount DECIMAL(10,2) NOT NULL,
+    jamath VARCHAR(100),
+    collection_type VARCHAR(100),
+    month VARCHAR(50),
+    year VARCHAR(50),
+    access_key VARCHAR(255),
+    status VARCHAR(50) DEFAULT 'INITIATED',
+    request_payload JSON,
+    response_payload JSON,
+    easebuzz_id VARCHAR(100),
+    bank_ref_num VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_txnid (txnid),
+    INDEX idx_katha (katha_number)
+  )`;
+
 async function init() {
   await pool.query(createPaymentRequestsTable);
   await pool.query(createMasjidSettingsTable);
   await pool.query(createPaymentVerificationsTable);
+  await pool.query(createOnlineTransactionsTable);
   try { await pool.query(migrationAddUserId); } catch (_) { /* column may already exist */ }
   try { await pool.query(migrationAddExtraColumns); } catch (_) { /* columns may already exist */ }
 
@@ -264,6 +288,49 @@ async function updateSettings(data) {
   return getSettings();
 }
 
+async function createOnlineTransaction(data) {
+  await pool.query(
+    `INSERT INTO online_transactions (id, txnid, katha_number, mobile, amount, jamath, collection_type, month, year, access_key, status, request_payload)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.id,
+      data.txnid,
+      data.katha_number,
+      data.mobile || null,
+      data.amount,
+      data.jamath || 'BSJM Thodar',
+      data.collection_type,
+      data.month || '',
+      data.year || '',
+      data.access_key || null,
+      data.status || 'INITIATED',
+      data.request_payload ? JSON.stringify(data.request_payload) : null,
+    ]
+  );
+  return findOnlineTransactionByTxnId(data.txnid);
+}
+
+async function updateOnlineTransactionStatus(txnid, status, responsePayload, easebuzzId, bankRefNum) {
+  await pool.query(
+    `UPDATE online_transactions 
+     SET status = ?, response_payload = ?, easebuzz_id = ?, bank_ref_num = ?
+     WHERE txnid = ?`,
+    [
+      status,
+      responsePayload ? JSON.stringify(responsePayload) : null,
+      easebuzzId || null,
+      bankRefNum || null,
+      txnid,
+    ]
+  );
+  return findOnlineTransactionByTxnId(txnid);
+}
+
+async function findOnlineTransactionByTxnId(txnid) {
+  const [rows] = await pool.query('SELECT * FROM online_transactions WHERE txnid = ?', [txnid]);
+  return rows[0] || null;
+}
+
 module.exports = {
   init,
   createRequest,
@@ -278,5 +345,7 @@ module.exports = {
   createOtpVerification,
   findValidOtp,
   markOtpVerified,
+  createOnlineTransaction,
+  updateOnlineTransactionStatus,
+  findOnlineTransactionByTxnId,
 };
-

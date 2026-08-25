@@ -44,5 +44,11 @@ router.post('/notifyapproval', authenticate, controller.notifyApproval);
 router.patch('/settings', authenticate, authorize('admin'), validate(schema.updateSettings), controller.updateSettings);
 router.post('/settings/qr', authenticate, authorize('admin'), upload.single('qr'), controller.uploadQr);
 
+
+router.post('/easebuzz/initiate', authenticate, controller.initiateEasebuzzPayment);
+router.post('/easebuzz/response', controller.handleEasebuzzResponse);
+router.get('/easebuzz/status/:txnid', controller.getEasebuzzStatus);
+router.get('/receipt/:receipt_no', controller.getReceiptDetails);
+
 module.exports = router;
 

@@ -81,3 +81,35 @@ exports.notifyApproval = async (req, res, next) => {
 
 
 
+
+
+exports.initiateEasebuzzPayment = async (req, res, next) => {
+  try {
+    const result = await service.initiateEasebuzzPayment(req.body, req.user);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.handleEasebuzzResponse = async (req, res, next) => {
+  try {
+    const result = await service.handleEasebuzzResponse(req.body);
+    if (result.redirect_url) {
+      return res.redirect(result.redirect_url);
+    }
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.getEasebuzzStatus = async (req, res, next) => {
+  try {
+    const result = await service.getEasebuzzStatus(req.params.txnid);
+    res.json(result);
+  } catch (e) { next(e); }
+};
+
+exports.getReceiptDetails = async (req, res, next) => {
+  try {
+    const result = await service.getReceiptDetails(req.params.receipt_no);
+    res.json(result);
+  } catch (e) { next(e); }
+};
