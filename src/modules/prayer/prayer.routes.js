@@ -14,4 +14,8 @@ router.get('/month',              authenticate, controller.getMonth);
 router.get('/preferences',        authenticate, controller.getPreferences);
 router.patch('/preferences',      authenticate, controller.updatePreferences);
 
+// ── Scheduler ─────────────────────────────────────────────────────────────────
+// GET /api/v1/prayer/cron/reminders — secret-guarded, called by cron.
+router.get('/cron/reminders', controller.runReminderCron);
+
 module.exports = router;
